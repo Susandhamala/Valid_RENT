@@ -1,0 +1,37 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: validrent
+      POSTGRES_USER: validrent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-validrent_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U validrent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./storage:/app/storage
+      - ./instance:/app/instance
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-validrent-super-secret-key-2024}
+      - DATABASE_URL=postgresql://validrent:${POSTGRES_PASSWORD:-validrent_secret}@db:5432/validrent
+      - BASE_URL=${BASE_URL:-http://localhost:5000}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

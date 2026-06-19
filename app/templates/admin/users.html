@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Admin — Users{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block content %}
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>All Users</h1>
+    <p style="color:var(--gray-500)">{{ users|length }} user(s) found</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('admin.create_user') }}" class="btn btn-primary">+ Create User</a>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="GET" style="display:flex;gap:10px;margin-bottom:1.5rem;flex-wrap:wrap" class="pop-in">
+  <input name="q" value="{{ q }}" class="form-control" placeholder="Search name or email…" style="max-width:260px">
+  <select name="role" class="form-control" style="max-width:160px">
+    <option value="">All Roles</option>
+    <option value="landlord" {% if role=='landlord' %}selected{% endif %}>Landlord</option>
+    <option value="tenant"   {% if role=='tenant'   %}selected{% endif %}>Tenant</option>
+    <option value="admin"    {% if role=='admin'    %}selected{% endif %}>Admin</option>
+  </select>
+  <button class="btn btn-outline">Filter</button>
+  {% if q or role %}<a href="{{ url_for('admin.users') }}" class="btn btn-ghost">Clear</a>{% endif %}
+</form>
+
+<div class="card pop-in">
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="font-mono" style="font-size:12px">{{ u.id }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:var(--black);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0">{{ u.full_name[0].upper() }}</div>
+              <span style="font-weight:600">{{ u.full_name }}</span>
+            </div>
+          </td>
+          <td style="font-size:.85rem">{{ u.email }}</td>
+          <td>
+            {% if u.role == 'admin' %}
+            <span class="badge" style="background:#000;color:#fff">Admin</span>
+            {% elif u.role == 'landlord' %}
+            <span class="badge badge-info">Landlord</span>
+            {% else %}
+            <span class="badge badge-grey">Tenant</span>
+            {% endif %}
+          </td>
+          <td>{% if u.is_active %}<span class="badge badge-success">Yes</span>{% else %}<span class="badge badge-danger">No</span>{% endif %}</td>
+          <td style="font-size:.8rem;color:var(--gray-500)">{{ u.created_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <a href="{{ url_for('admin.view_user', user_id=u.id) }}" class="btn btn-sm btn-ghost">View</a>
+              <a href="{{ url_for('admin.edit_user', user_id=u.id) }}" class="btn btn-sm btn-outline">Edit</a>
+              {% if u.id != current_user.id %}
+              <form method="POST" action="{{ url_for('admin.delete_user', user_id=u.id) }}"
+                    onsubmit="return confirm('Delete {{ u.email }}? This cannot be undone.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm" style="background:var(--danger);color:#fff">Delete</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gray-400)">No users found</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

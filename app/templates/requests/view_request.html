@@ -1,0 +1,1078 @@
+{% extends "base.html" %}
+{% block title %}Request #{{ req.id }}{% endblock %}
+{% block page_title %}Rental Request{% endblock %}
+
+{% block head %}
+<style>
+/* ── WORKFLOW TRACKER ─── */
+.workflow { display:flex; align-items:flex-start; gap:0; margin-bottom:28px; overflow-x:auto; padding-bottom:4px; }
+.wf-step { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:100px; }
+.wf-dot { width:36px; height:36px; border-radius:50%; border:2px solid var(--grey-300); display:flex; align-items:center; justify-content:center; font-size:16px; background:var(--white); flex-shrink:0; transition:all .2s; }
+.wf-dot.done { background:var(--black); border-color:var(--black); color:var(--white); }
+.wf-dot.active { border-color:var(--black); background:var(--white); box-shadow:0 0 0 3px rgba(0,0,0,.1); }
+.wf-label { font-size:10px; font-weight:600; text-align:center; color:var(--grey-500); text-transform:uppercase; letter-spacing:.3px; line-height:1.3; }
+.wf-label.done { color:var(--black); }
+.wf-line { flex:1; height:2px; background:var(--grey-200); margin-top:17px; min-width:20px; }
+.wf-line.done { background:var(--black); }
+
+/* ── CHAT ─── */
+.chat-wrap { display:flex; flex-direction:column; height:380px; }
+.chat-messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+.chat-msg { max-width:72%; }
+.chat-msg.mine { align-self:flex-end; }
+.chat-msg.other { align-self:flex-start; }
+.chat-msg.system-msg { align-self:center; max-width:90%; }
+.bubble { padding:10px 14px; border-radius:14px; font-size:13px; line-height:1.5; }
+.mine .bubble { background:var(--black); color:var(--white); border-bottom-right-radius:3px; }
+.other .bubble { background:var(--grey-100); color:var(--black); border-bottom-left-radius:3px; }
+.system-msg .bubble { background:var(--grey-100); color:var(--grey-600); font-size:12px; text-align:center; border-radius:8px; font-style:italic; }
+.msg-meta { font-size:10px; color:var(--grey-400); margin-top:3px; }
+.mine .msg-meta { text-align:right; }
+.chat-input { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--grey-200); }
+.chat-input textarea { flex:1; border:1.5px solid var(--grey-200); border-radius:var(--radius-sm); padding:10px 12px; font-size:14px; font-family:var(--font); resize:none; height:44px; transition:border-color .2s; }
+.chat-input textarea:focus { outline:none; border-color:var(--black); }
+
+/* ── STEP CARDS ─── */
+.step-card { border:1.5px solid var(--grey-200); border-radius:var(--radius); padding:18px 20px; margin-bottom:14px; }
+.step-card.done { border-color:var(--success); background:#f0fdf4; }
+.step-card.active { border-color:var(--black); }
+.step-card.locked { opacity:.55; }
+.step-card-title { font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Rental Request</h1>
+    <p class="font-mono" style="font-size:12px">{{ req.request_uid }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('req.list_requests') }}" class="btn btn-outline">← Requests</a>
+    {% if gen_pdf %}
+    <a href="{{ url_for('pdf.download_pdf', agreement_id=agreement.id) }}" class="btn btn-primary">⬇ Download PDF</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── WORKFLOW TRACKER ─────────────────────────────────────────────── -->
+{% set st = req.status %}
+{% set steps = [
+  ('pending', 'Request\nSent', '📋'),
+  ('under_review', 'Under\nReview', '👀'),
+  ('negotiating', 'Negotiating', '💬'),
+  ('approved', 'Terms\nApproved', '✅'),
+  ('agreement_created', 'Draft\nGenerated', '📄'),
+  ('fully_signed', 'Signed &\nVerified', '🔐'),
+] %}
+{% set done_order = ['pending','under_review','negotiating','approved','agreement_created','fully_signed'] %}
+{% set current_idx = done_order.index(st) if st in done_order else 0 %}
+
+<div class="workflow pop-in pop-in-delay-1">
+  {% for skey, slabel, semoji in steps %}
+  {% set idx = loop.index0 %}
+  {% if idx > 0 %}<div class="wf-line {% if idx <= current_idx %}done{% endif %}"></div>{% endif %}
+  <div class="wf-step">
+    <div class="wf-dot {% if idx < current_idx %}done{% elif idx == current_idx %}active{% endif %}">
+      {% if idx < current_idx %}✓{% else %}{{ semoji }}{% endif %}
+    </div>
+    <div class="wf-label {% if idx <= current_idx %}done{% endif %}">{{ slabel }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── FLOATING INSTRUCTION GUIDE ────────────────────────────────────── -->
+{# Compute initial guide state server-side so it shows immediately without JS #}
+{% set _i_am_landlord = current_user.id == req.landlord_id %}
+{% set _my_photo = my_photo %}
+{% set _both_photos = l_photo and l_photo.photo_encrypted_path and t_photo and t_photo.photo_encrypted_path %}
+{% set _doc_verified = t_photo and t_photo.document_approved %}
+{% if gen_pdf %}
+  {% set _gi = '🎉' %} {% set _gb = '#166534' %}
+  {% set _gl1 = 'Agreement fully signed and certified!' %}
+  {% set _gl2 = 'Download the PDF certificate using the button above.' %}
+{% elif req.status == 'fully_signed' %}
+  {% set _gi = '🔐' %} {% set _gb = '#166534' %}
+  {% set _gl1 = 'Both parties have signed.' %}
+  {% set _gl2 = 'PDF is being generated — reload in a moment.' %}
+{% elif req.status == 'rejected' %}
+  {% set _gi = '❌' %} {% set _gb = '#7f1d1d' %}
+  {% set _gl1 = 'This request was rejected.' %}
+  {% set _gl2 = 'No further action is needed.' %}
+{% elif req.agreement_id and not _my_photo %}
+  {% set _gi = '⚠️' %} {% set _gb = '#92400e' %}
+  {% set _gl1 = 'Action required: Capture your identity photo (Step 3).' %}
+  {% set _gl2 = 'You must submit your photo before you can sign the agreement.' %}
+  {% if req.agreement_id %}{% set _ga_label = '📷 Capture Photo' %} {% set _ga_href = url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') %}{% endif %}
+{% elif req.agreement_id and _my_photo and not (agreement and ((agreement.landlord_signature and _i_am_landlord) or (agreement.tenant_signature and not _i_am_landlord))) %}
+  {% set _gi = '👆' %} {% set _gb = '#1d4ed8' %}
+  {% set _gl1 = 'Your turn: Sign the agreement digitally (Step 4).' %}
+  {% set _gl2 = 'Click "Sign with Digital Certificate" to complete your RSA-2048 signature.' %}
+{% elif req.status in ('under_review', 'negotiating') and not (my_terms_approval and my_terms_approval.approved) %}
+  {% set _gi = '👆' %} {% set _gb = '#1d4ed8' %}
+  {% set _gl1 = 'Your turn: Approve the proposed terms (Step 2).' %}
+  {% set _gl2 = 'Review the rent and dates, then click "I Agree to These Terms".' %}
+{% elif req.status == 'pending' and not req.initiated_by_landlord and _i_am_landlord %}
+  {% set _gi = '👆' %} {% set _gb = '#1d4ed8' %}
+  {% set _gl1 = 'Your turn: Start reviewing this request (Step 1).' %}
+  {% set _gl2 = 'Click "Start Review & Open Chat" to begin negotiation.' %}
+{% elif req.status == 'pending' and req.initiated_by_landlord and not _i_am_landlord %}
+  {% set _gi = '⚠️' %} {% set _gb = '#92400e' %}
+  {% set _gl1 = 'Action required: Accept or reject this agreement.' %}
+  {% set _gl2 = 'The landlord created this agreement for you. Scroll to Step 1 to respond.' %}
+{% elif my_terms_approval and my_terms_approval.approved and not terms_both %}
+  {% set _gi = '⏳' %} {% set _gb = '#334155' %}
+  {% set _gl1 = 'Waiting for the other party to approve the terms.' %}
+  {% set _gl2 = 'You will be notified via chat when they respond.' %}
+{% else %}
+  {% set _gi = '⏳' %} {% set _gb = '#334155' %}
+  {% set _gl1 = 'Processing — waiting for the next step.' %}
+  {% set _gl2 = 'Reload the page to check for updates.' %}
+{% endif %}
+
+<div id="guideBar" style="position:sticky;top:0;z-index:40;margin-bottom:18px;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.10)">
+  <div id="guideInner" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:{{ _gb }};color:#fff;font-size:13px;min-height:48px">
+    <span id="guideIcon" style="font-size:18px;flex-shrink:0">{{ _gi }}</span>
+    <div style="flex:1">
+      <div id="guideLine1" style="font-weight:700;font-size:13px;line-height:1.3">{{ _gl1 }}</div>
+      <div id="guideLine2" style="font-size:11px;opacity:.7;margin-top:2px">{{ _gl2 }}</div>
+    </div>
+    <button id="guideReloadBtn" onclick="location.reload()"
+            style="display:none;background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap">
+      ↻ Reload Page
+    </button>
+    {% if _ga_label is defined and _ga_href is defined %}
+    <a id="guideActionBtn" href="{{ _ga_href }}" style="display:inline-block;background:#22c55e;color:#fff;text-decoration:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;flex-shrink:0;white-space:nowrap">{{ _ga_label }}</a>
+    {% else %}
+    <a id="guideActionBtn" href="#" style="display:none;background:#22c55e;color:#fff;text-decoration:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;flex-shrink:0;white-space:nowrap"></a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2" style="gap:20px;align-items:start">
+
+<!-- LEFT: Details + Actions ─────────────────────────────────────── -->
+<div>
+
+  <!-- REQUEST SUMMARY -->
+  <div class="card pop-in pop-in-delay-1" style="margin-bottom:16px">
+    <div class="card-body">
+      <div class="section-title">Request Details</div>
+      <div style="display:grid;gap:10px">
+
+        {# Status row — rendered first with real badge markup #}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--grey-100)">
+          <span class="text-muted text-sm">Status</span>
+          {% set _bc = 'badge-warning' if req.status == 'pending'
+                  else 'badge-success' if req.status in ('approved', 'agreement_created', 'fully_signed')
+                  else 'badge-danger'  if req.status == 'rejected'
+                  else 'badge-info' %}
+          <span id="req-status-badge" class="badge {{ _bc }}" data-status="{{ req.status }}">
+            {{ req.status_label }}
+          </span>
+        </div>
+
+        {# All other plain-text rows #}
+        {% set details = [
+          ('Category',      req.rental_category),
+          ('Asset',         req.asset.asset_title if req.asset else 'N/A'),
+          ('Location',      req.asset.location if req.asset else 'N/A'),
+          ('Proposed Rent', req.currency ~ ' ' ~ '{:,.0f}'.format(req.proposed_rent or 0)),
+          ('Counter Rent',  req.currency ~ ' ' ~ '{:,.0f}'.format(req.landlord_counter_rent) if req.landlord_counter_rent else None),
+          ('Effective Rent',req.currency ~ ' ' ~ '{:,.0f}'.format(req.effective_rent or 0)),
+          ('Start Date',    req.proposed_start_date | string if req.proposed_start_date else 'TBD'),
+          ('End Date',      req.proposed_end_date   | string if req.proposed_end_date   else 'TBD'),
+          ('Created',       req.created_at.strftime('%d %b %Y %H:%M')),
+        ] %}
+        {% for label, val in details %}
+        {% if val %}
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--grey-100)">
+          <span class="text-muted text-sm">{{ label }}</span>
+          <span style="font-weight:600;font-size:13px">{{ val }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTIES -->
+  <div class="card pop-in pop-in-delay-2" style="margin-bottom:16px">
+    <div class="card-body">
+      <div class="section-title">Parties</div>
+      {% for label, user, cert_ok in [
+        ('Landlord', req.landlord, True),
+        ('Tenant', req.tenant, True),
+      ] %}
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+        <div style="width:38px;height:38px;border-radius:50%;background:{% if label=='Landlord' %}var(--black){% else %}var(--grey-200){% endif %};color:{% if label=='Landlord' %}var(--white){% else %}var(--black){% endif %};display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">{{ user.full_name[0].upper() }}</div>
+        <div>
+          <div style="font-weight:700;font-size:14px">{{ user.full_name }}</div>
+          <div class="text-muted text-sm">{{ label }} &bull; {{ user.email }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── STEP-BY-STEP ACTIONS ────────────────────────────────── -->
+
+  {# STEP 1a: Tenant accepts/rejects landlord-initiated direct agreement #}
+  {% if req.initiated_by_landlord and current_user.id == req.tenant_id and req.status == 'pending' %}
+  <div class="step-card active">
+    <div class="step-card-title">📋 Step 1 — Review &amp; Respond to Agreement</div>
+    <p class="text-muted text-sm" style="margin-bottom:6px">
+      The landlord has created an agreement directly for you. Review the details and accept or reject it.
+    </p>
+    {% if req.agreement_id %}
+    <a href="{{ url_for('agreement.view_agreement', agreement_id=req.agreement_id, return_to='request') }}" class="btn btn-outline btn-sm" style="margin-bottom:12px">
+      View Full Agreement Details →
+    </a>
+    {% endif %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <form method="POST" action="{{ url_for('req.accept_direct_agreement', req_id=req.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-success">✓ Accept Agreement</button>
+      </form>
+      <form id="rejectDirectForm" method="POST" action="{{ url_for('req.reject_direct_agreement', req_id=req.id) }}" style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      </form>
+      <button type="button" class="btn btn-danger"
+              onclick="confirmAction('Reject this agreement? It will be cancelled and the landlord will be notified.','rejectDirectForm')">
+        ✗ Reject Agreement
+      </button>
+    </div>
+  </div>
+  {% elif req.initiated_by_landlord and current_user.id == req.landlord_id and req.status == 'pending' %}
+  <div class="step-card active">
+    <div class="step-card-title">⏳ Step 1 — Waiting for Tenant to Respond</div>
+    <p class="text-muted text-sm">You created this agreement directly. Waiting for <strong>{{ req.tenant.full_name }}</strong> to accept or reject it.</p>
+  </div>
+  {% elif req.initiated_by_landlord and req.status == 'approved' %}
+  <div class="step-card done">
+    <div class="step-card-title">✅ Step 1 — Tenant Accepted the Agreement</div>
+    <p class="text-muted text-sm">{{ req.tenant.full_name }} accepted on {{ req.approved_at.strftime('%d %b %Y %H:%M') if req.approved_at else '' }}. Both parties can now sign.</p>
+    {% if req.agreement_id %}
+    <a href="{{ url_for('agreement.view_agreement', agreement_id=req.agreement_id, return_to='request') }}" class="btn btn-primary btn-sm" style="margin-top:8px">Go to Agreement &amp; Sign →</a>
+    {% endif %}
+  </div>
+  {# STEP 1b: Normal landlord review for tenant-initiated requests #}
+  {% elif not req.initiated_by_landlord and current_user.id == req.landlord_id and req.status == 'pending' %}
+  <div class="step-card active">
+    <div class="step-card-title">👀 Step 1 — Review This Request</div>
+    <p class="text-muted text-sm" style="margin-bottom:14px">Mark as under review to open the negotiation chat.</p>
+    <form method="POST" action="{{ url_for('req.mark_under_review', req_id=req.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary">Start Review &amp; Open Chat</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {# STEP 1b: Landlord counter-offer #}
+  {% if current_user.id == req.landlord_id and req.status in ('under_review','negotiating') %}
+  <div class="step-card active">
+    <div class="step-card-title">💬 Counter-Offer (Optional)</div>
+    <form method="POST" action="{{ url_for('req.counter_offer', req_id=req.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid" style="margin-bottom:10px">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Counter Rent ({{ req.currency }})</label>
+          <input type="number" name="counter_rent" class="form-control" placeholder="Your counter offer"
+                 value="{{ req.landlord_counter_rent or '' }}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Note to Tenant</label>
+          <input type="text" name="landlord_note" class="form-control" placeholder="Optional note">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-outline btn-sm">Send Counter-Offer</button>
+      </div>
+    </form>
+    <div class="divider"></div>
+    <div class="step-card-title" style="color:var(--danger)">❌ Or Reject Request</div>
+    <form method="POST" action="{{ url_for('req.reject_request', req_id=req.id) }}" style="display:flex;gap:8px;align-items:center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="reason" class="form-control" placeholder="Reason for rejection" style="flex:1">
+      <button type="button" class="btn btn-danger btn-sm" onclick="confirmAction('Reject this rental request?','rejectForm{{ req.id }}')">Reject</button>
+    </form>
+    <form id="rejectForm{{ req.id }}" method="POST" action="{{ url_for('req.reject_request', req_id=req.id) }}" style="display:none">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    </form>
+  </div>
+  {% endif %}
+
+  {# STEP 2: Approve Terms (both) — always show once terms are relevant #}
+  {% set terms_done = my_terms_approval and my_terms_approval.approved %}
+  {% if req.status in ('pending','under_review','negotiating','approved') or terms_both %}
+  <div class="step-card {% if terms_both %}done{% elif terms_done %}done{% elif req.status in ('under_review','negotiating') %}active{% else %}locked{% endif %}">
+    <div class="step-card-title">
+      {% if terms_both or terms_done %}✅{% else %}📋{% endif %}
+      Step 2 — Approve Proposed Terms
+    </div>
+    {% if terms_both %}
+    <div style="color:var(--success);font-size:13px;font-weight:600">✓ Both parties have approved the terms</div>
+    <div class="text-muted text-sm" style="margin-top:4px">
+      Effective Rent: <strong>{{ req.currency }} {{ '{:,.0f}'.format(req.effective_rent or 0) }}/month</strong> &bull;
+      Period: {{ req.proposed_start_date or 'TBD' }} → {{ req.proposed_end_date or 'TBD' }}
+    </div>
+    {% elif terms_done %}
+    <div style="color:var(--success);font-size:13px;font-weight:600">✓ You have approved the terms</div>
+    <div class="vr-waiting">Waiting for the other party to approve…</div>
+    {% elif req.status in ('under_review','negotiating') %}
+    <p class="text-muted text-sm" style="margin-bottom:12px">
+      Effective Rent: <strong>{{ req.currency }} {{ '{:,.0f}'.format(req.effective_rent or 0) }}/month</strong> &bull;
+      Period: {{ req.proposed_start_date or 'TBD' }} → {{ req.proposed_end_date or 'TBD' }}
+    </p>
+    <form method="POST" action="{{ url_for('req.approve_terms', req_id=req.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-success">✓ I Agree to These Terms</button>
+    </form>
+    {% else %}
+    <div class="text-muted text-sm">Available once both parties are in negotiation.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# STEP 3: Identity Photo — just shows status & CTA; detail is in the right panel #}
+  {% if req.agreement_id %}
+  <div id="step4Card" class="step-card {% if my_photo %}done{% else %}active{% endif %}">
+    <div class="step-card-title">
+      {% if my_photo %}✅{% else %}📷{% endif %}
+      Step 3 — Identity Photo &amp; Document
+    </div>
+    {% if my_photo %}
+    <div style="color:var(--success);font-size:13px;font-weight:600">✓ Your photo is on file</div>
+    <div class="text-muted text-sm" style="margin-top:4px">
+      See the <strong>Identity Verification</strong> panel on the right for full photo &amp; document status.
+    </div>
+    {% else %}
+    <p class="text-muted text-sm" style="margin-bottom:12px">
+      Capture your webcam photo{% if current_user.id == req.tenant_id %} and upload your identity document (citizenship, passport, etc.){% endif %}.
+      <br>Use the <strong>Identity Verification</strong> panel on the right, or click below.
+    </p>
+    <a href="{{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') }}"
+       class="btn btn-primary btn-sm">📷 Go to Photo Capture →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# STEP 3.5: View Full Agreement — unlocks after tenant doc is verified #}
+  {% if req.agreement_id and terms_both %}
+  {% set _both_photos_ok = l_photo and l_photo.photo_encrypted_path and t_photo and t_photo.photo_encrypted_path %}
+  {% set _doc_verified   = t_photo and t_photo.document_approved %}
+  {% set _verification_done = _both_photos_ok and _doc_verified %}
+  <div class="step-card {% if _verification_done %}active{% else %}locked{% endif %}">
+    <div class="step-card-title">
+      {% if _verification_done %}📄{% else %}🔒{% endif %}
+      Step 3.5 — Review Full Agreement
+    </div>
+    {% if _verification_done %}
+    <p class="text-muted text-sm" style="margin-bottom:4px">
+      Both photos are on file and the identity document has been verified.
+      Review the complete bilingual agreement before signing.
+    </p>
+    <p style="font-size:13px;font-weight:600;color:var(--success);margin-bottom:12px">
+      ✅ You can now move on to Step 4 — Sign the Agreement.
+    </p>
+    <a href="{{ url_for('agreement.view_agreement', agreement_id=agreement.id, return_to='request') }}"
+       class="btn btn-primary btn-sm">📄 Open Full Agreement →</a>
+    {% else %}
+    <div class="text-muted text-sm">
+      Unlocks after:
+      <ul style="margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--grey-500)">
+        <li {% if l_photo and l_photo.photo_encrypted_path %}style="color:var(--success)"{% endif %}>Landlord webcam photo captured</li>
+        <li {% if t_photo and t_photo.photo_encrypted_path %}style="color:var(--success)"{% endif %}>Tenant webcam photo captured</li>
+        <li {% if _doc_verified %}style="color:var(--success)"{% endif %}>Tenant identity document verified by landlord</li>
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# STEP 4: Digital Sign #}
+  {% if req.agreement_id %}
+  {% set already_signed = (current_user.id == req.landlord_id and agreement.landlord_signature) or (current_user.id == req.tenant_id and agreement.tenant_signature) %}
+  <div class="step-card {% if already_signed %}done{% else %}active{% endif %}">
+    <div class="step-card-title">
+      {% if already_signed %}✅{% else %}✍{% endif %}
+      Step 4 — Digital Sign (RSA-PSS / SHA-256)
+    </div>
+    {% if already_signed %}
+    <div style="color:var(--success);font-size:13px;font-weight:600">✓ You have digitally signed</div>
+    {% set my_remarks = agreement.landlord_remarks if current_user.id == req.landlord_id else agreement.tenant_remarks %}
+    {% if my_remarks %}
+    <div style="margin-top:8px;padding:8px 12px;background:var(--grey-50,#f9fafb);border:1px solid var(--grey-200);border-radius:6px;font-size:13px;color:var(--grey-700)">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--grey-400);display:block;margin-bottom:3px">Your remark</span>
+      {{ my_remarks }}
+    </div>
+    {% endif %}
+    {% if not agreement.is_fully_signed %}<div class="vr-waiting">Waiting for other party to sign…</div>{% endif %}
+    {% else %}
+    <p class="text-muted text-sm" style="margin-bottom:12px">
+      Sign with your RSA-2048 private key. The SHA-256 document hash will be signed using RSA-PSS with SHA-256.
+      {% if current_user.id == req.tenant_id and agreement.landlord_signature %}
+      <br><strong>Landlord has already signed.</strong> You can now verify and sign.
+      {% elif current_user.id == req.tenant_id and not agreement.landlord_signature %}
+      <br>Waiting for landlord to sign first.
+      {% endif %}
+    </p>
+    {% if current_user.id == req.landlord_id or (current_user.id == req.tenant_id and agreement.landlord_signature) %}
+      {% if not my_photo %}
+      <div style="padding:12px 14px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">📷 Identity Photo Required</div>
+        <div style="font-size:13px;color:#92400e;margin-bottom:10px">You must capture your identity photo before signing. This is mandatory.</div>
+        <a href="{{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') }}" class="btn btn-primary btn-sm">Capture My Photo →</a>
+      </div>
+      {% else %}
+      <form id="signForm" method="POST" action="{{ url_for('req.sign_agreement', req_id=req.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:700;color:var(--grey-600);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">
+            Your Remarks <span style="font-weight:400;color:var(--grey-400)">(optional)</span>
+          </label>
+          <textarea name="signing_remarks" rows="3" maxlength="500"
+                    placeholder="Add any note or remark before signing (e.g. agreed conditions, date of handover, etc.)…"
+                    style="width:100%;resize:vertical;border:1.5px solid var(--grey-300);border-radius:6px;padding:8px 10px;font-size:13px;font-family:var(--font);outline:none;box-sizing:border-box"
+                    onfocus="this.style.borderColor='var(--black)'" onblur="this.style.borderColor='var(--grey-300)'"></textarea>
+          <div style="font-size:11px;color:var(--grey-400);margin-top:3px">Max 500 characters. This remark will be recorded in the agreement audit log.</div>
+        </div>
+        <button type="button" class="btn btn-primary"
+                onclick="confirmAction('Sign this agreement with your RSA-2048 digital certificate? This action is cryptographically binding.','signForm')">
+          🔐 Sign with Digital Certificate
+        </button>
+      </form>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# STEP 5: PDF #}
+  {% if agreement and agreement.is_fully_signed %}
+  <div class="step-card done">
+    <div class="step-card-title">✅ Step 5 — PDF Certificate Generated</div>
+    {% if gen_pdf %}
+    <div style="color:var(--success);font-size:13px;font-weight:600;margin-bottom:10px">✓ Certificate is ready for download</div>
+    <div style="display:flex;gap:8px">
+      <a href="{{ url_for('pdf.download_pdf', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm">⬇ Download PDF</a>
+      <a href="{{ url_for('verification.verify_by_code', code=agreement.verification_code) }}" target="_blank" class="btn btn-outline btn-sm">🔍 Verify Online</a>
+    </div>
+    {% else %}
+    <div class="text-muted text-sm">PDF is being generated…</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div><!-- /left -->
+
+<!-- RIGHT: Encrypted Chat ──────────────────────────────────────── -->
+<div>
+  <div class="card pop-in pop-in-delay-2" style="overflow:hidden">
+    <div class="card-header" style="background:var(--black);color:var(--white);padding:14px 20px">
+      <div>
+        <div style="font-weight:700;font-size:15px">🔒 Encrypted Chat</div>
+        <div style="font-size:11px;opacity:.6">AES-256-GCM • Only visible to you and the other party</div>
+      </div>
+      <span style="font-size:10px;opacity:.5;margin-left:auto">Thread: {{ thread.thread_uid[:8] }}…</span>
+    </div>
+
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chatMessages">
+        {% for msg in messages %}
+        <div class="chat-msg {% if msg.is_system %}system-msg{% elif msg.is_mine %}mine{% else %}other{% endif %}">
+          <div class="bubble">{{ msg.text }}</div>
+          {% if not msg.is_system %}
+          <div class="msg-meta">{{ msg.sender_name }} &bull; {{ msg.sent_at.strftime('%d %b %H:%M') }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if not messages %}
+        <div style="text-align:center;color:var(--grey-400);font-size:13px;padding:20px 0">
+          No messages yet. Start the conversation!
+        </div>
+        {% endif %}
+      </div>
+      <div class="chat-input">
+        <textarea id="chatText" placeholder="Type a message… (Enter to send)" rows="1"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}"></textarea>
+        <button class="btn btn-primary btn-sm" onclick="sendChatMsg()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bilingual Agreement Preview (if generated) -->
+  {% if agreement %}
+  <div class="card pop-in pop-in-delay-3" style="margin-top:16px">
+    <div class="card-body">
+      <div class="section-title">Bilingual Agreement</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <span class="badge badge-info">English</span>
+        <span class="badge badge-success">नेपाली</span>
+      </div>
+      <div style="background:var(--grey-100);border-radius:var(--radius-sm);padding:12px;font-size:11px;font-family:monospace;max-height:200px;overflow-y:auto;line-height:1.6">
+        SHA-256: {{ agreement.document_hash_sha256 or 'N/A' }}<br>
+        Status: {{ agreement.status }}<br>
+        Landlord Sig: {% if agreement.landlord_signature %}✓ Signed{% else %}Pending{% endif %}<br>
+        Tenant Sig: {% if agreement.tenant_signature %}✓ Signed{% else %}Pending{% endif %}
+      </div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+        <a href="{{ url_for('agreement.view_agreement', agreement_id=agreement.id, return_to='request') }}" class="btn btn-outline btn-sm btn-full">
+          View Full Agreement Details →
+        </a>
+        {% if agreement.shared_file_path %}
+        <a href="{{ url_for('agreement.view_document', agreement_id=agreement.id) }}"
+           target="_blank" class="btn btn-outline btn-sm btn-full">
+          📄 View Uploaded Document — {{ agreement.original_filename }}
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── IDENTITY VERIFICATION PANEL ── role-separated, fully inline ── -->
+  {% if req.agreement_id %}
+  {% set doc_type_labels = {
+    'citizenship':     'Citizenship Certificate (नागरिकता)',
+    'passport':        'Passport (राहदानी)',
+    'driving_license': 'Driving License (सवारी चालक अनुमतिपत्र)',
+    'voter_id':        'Voter ID Card (मतदाता परिचयपत्र)',
+    'national_id':     'National ID Card (राष्ट्रिय परिचयपत्र)',
+  } %}
+  {% set i_am_landlord = current_user.id == req.landlord_id %}
+  {% set doc_is_image = t_photo and t_photo.document_path and not t_photo.document_path.endswith('.pdf') %}
+
+  <div class="card pop-in pop-in-delay-3" id="idVerCard" style="margin-top:16px">
+    <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--grey-200)">
+      <div>
+        <div style="font-weight:700;font-size:15px">📷 Identity Verification</div>
+        <div style="font-size:11px;color:var(--grey-500)">
+          {% if i_am_landlord %}Review tenant's submission and capture your own photo
+          {% else %}Submit your photo and identity document{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0">
+
+    {% if i_am_landlord %}
+    {# ══ LANDLORD VIEW ═══════════════════════════════════════════════════════ #}
+
+    <!-- A: Your own photo -->
+    <div style="padding:14px 16px;border-bottom:1px solid var(--grey-100)">
+      <div style="font-size:11px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Your Webcam Photo</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        {% if l_photo and l_photo.photo_encrypted_path %}
+        <img src="{{ url_for('photo.serve_photo', photo_id=l_photo.id) }}"
+             onclick="viewPhoto(this.src, this.dataset.name)"
+             data-name="{{ req.landlord.full_name | e }}"
+             style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:2.5px solid var(--black);cursor:zoom-in"
+             title="Click to view full size"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div style="display:none;width:56px;height:56px;border-radius:50%;background:var(--grey-200);align-items:center;justify-content:center;font-size:22px">📷</div>
+        {% else %}
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-size:22px">📷</div>
+        {% endif %}
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">{{ req.landlord.full_name }}</div>
+          {% if l_photo %}
+          <div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">
+            <span class="badge badge-success" style="font-size:10px">✓ Photo on file</span>
+            <a href="{{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') }}" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 8px">Re-capture</a>
+          </div>
+          {% else %}
+          <div style="margin-top:4px"><span class="badge badge-warning" style="font-size:10px">Not captured yet</span></div>
+          <a href="{{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') }}" class="btn btn-primary btn-sm" style="margin-top:8px;display:inline-flex">📷 Capture My Photo</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- B: Tenant's submission — review & approve/reject inline -->
+    <div style="padding:14px 16px" id="tenantDocSection">
+      <div style="font-size:11px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Tenant Submission</div>
+
+      <!-- Tenant webcam photo (click to view full size) -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        {% if t_photo and t_photo.photo_encrypted_path %}
+        <img src="{{ url_for('photo.serve_photo', photo_id=t_photo.id) }}"
+             onclick="viewPhoto(this.src, this.dataset.name)"
+             data-name="{{ req.tenant.full_name | e }}"
+             style="width:50px;height:50px;border-radius:50%;object-fit:cover;border:2px solid var(--grey-300);cursor:zoom-in"
+             title="Click to view full size"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div style="display:none;width:50px;height:50px;border-radius:50%;background:var(--grey-200);align-items:center;justify-content:center;font-size:18px">📷</div>
+        {% else %}
+        <div style="width:50px;height:50px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-size:18px">📷</div>
+        {% endif %}
+        <div>
+          <div style="font-weight:600;font-size:13px">{{ req.tenant.full_name }}</div>
+          {% if t_photo and t_photo.photo_encrypted_path %}
+          <span class="badge badge-success" style="font-size:10px;margin-top:3px">✓ Webcam photo</span>
+          {% else %}
+          <span class="badge badge-warning" style="font-size:10px;margin-top:3px">Awaiting photo</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Tenant identity document — inline preview + approve/reject -->
+      {% if t_photo and t_photo.document_path %}
+      <div style="background:var(--grey-50,#f9fafb);border-radius:10px;overflow:hidden;border:1px solid var(--grey-200)" id="docBox">
+
+        <!-- Document header -->
+        <div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border-bottom:1px solid var(--grey-100)">
+          <div>
+            <div style="font-size:12px;font-weight:700">🪪 {{ doc_type_labels.get(t_photo.document_type, t_photo.document_type|replace('_',' ')|title) if t_photo.document_type else 'Identity Document' }}</div>
+            <div class="text-muted" style="font-size:11px">Submitted by tenant</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            {% if doc_is_image %}
+            <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px"
+                    onclick="viewDocInline()">👁 Preview</button>
+            {% endif %}
+            <a href="{{ url_for('photo.serve_document', agreement_id=req.agreement_id) }}"
+               target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px">
+               {% if doc_is_image %}🔎 Open Full{% else %}📄 Open PDF{% endif %}
+            </a>
+          </div>
+        </div>
+
+        <!-- Inline image preview (hidden by default, toggled) -->
+        {% if doc_is_image %}
+        <div id="docPreviewBox" style="display:none;padding:12px;background:#111">
+          <img src="{{ url_for('photo.serve_document', agreement_id=req.agreement_id) }}"
+               style="max-width:100%;max-height:320px;object-fit:contain;border-radius:6px;display:block;margin:0 auto"
+               alt="Identity document">
+        </div>
+        {% endif %}
+
+        <!-- Approve / Reject actions -->
+        <div style="padding:10px 14px">
+          {% if t_photo.document_approved %}
+          <div id="docApprovalStatus" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-success">✓ Approved on {{ t_photo.document_approved_at.strftime('%d %b %Y') if t_photo.document_approved_at else '' }}</span>
+            <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px"
+                    onclick="promptRejectDoc()">Revoke &amp; Reject</button>
+          </div>
+          {% else %}
+          <div id="docApprovalStatus" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-warning" style="font-size:11px">Pending your review</span>
+            <button class="btn btn-success btn-sm" style="font-size:11px;padding:4px 12px"
+                    onclick="ajaxApproveDoc({{ req.agreement_id }})">✓ Approve</button>
+            <button class="btn btn-danger btn-sm" style="font-size:11px;padding:4px 10px"
+                    onclick="promptRejectDoc()">✗ Reject</button>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% elif t_photo %}
+      <div id="docBox" class="text-muted text-sm" style="padding:8px 2px;font-style:italic">
+        🕐 Tenant has a photo on file but hasn't uploaded their identity document yet.
+      </div>
+      {% else %}
+      <div id="docBox" class="text-muted text-sm" style="padding:8px 2px;font-style:italic">
+        <span class="vr-waiting">Waiting for tenant to submit their photo and document.</span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% else %}
+    {# ══ TENANT VIEW ══════════════════════════════════════════════════════════ #}
+
+    <!-- A: Your own photo + document -->
+    <div style="padding:14px 16px;border-bottom:1px solid var(--grey-100)">
+      <div style="font-size:11px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Your Photo &amp; Identity Document</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        {% if t_photo and t_photo.photo_encrypted_path %}
+        <img src="{{ url_for('photo.serve_photo', photo_id=t_photo.id) }}"
+             onclick="viewPhoto(this.src, 'Your photo')"
+             style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:2.5px solid var(--black);cursor:zoom-in"
+             title="Click to view full size"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div style="display:none;width:56px;height:56px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-size:22px">📷</div>
+        {% else %}
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-size:22px">📷</div>
+        {% endif %}
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">{{ req.tenant.full_name }}</div>
+          {% if t_photo and t_photo.photo_encrypted_path %}
+          <span class="badge badge-success" style="font-size:10px;margin-top:3px">✓ Photo captured</span>
+          {% else %}
+          <span class="badge badge-warning" style="font-size:10px;margin-top:3px">Photo not captured</span>
+          {% endif %}
+          {% if t_photo and t_photo.document_path %}
+          <div style="margin-top:4px">
+            <span class="badge {% if t_photo.document_approved %}badge-success{% elif t_photo.document_path %}badge-warning{% else %}badge-danger{% endif %}" style="font-size:10px">
+              {% if t_photo.document_approved %}🪪 Document approved{% else %}🪪 Awaiting landlord approval{% endif %}
+            </span>
+          </div>
+          {% elif t_photo %}
+          <div style="margin-top:4px"><span class="badge badge-danger" style="font-size:10px">🪪 No document uploaded — required!</span></div>
+          {% endif %}
+        </div>
+      </div>
+      <a href="{{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') }}"
+         class="btn {% if t_photo %}btn-outline{% else %}btn-primary{% endif %} btn-sm btn-full">
+        {% if t_photo %}🔄 Update Photo / Document{% else %}📷 Capture Photo &amp; Upload Document{% endif %}
+      </a>
+    </div>
+
+    <!-- B: Landlord photo (read-only for tenant) -->
+    <div style="padding:14px 16px">
+      <div style="font-size:11px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Landlord Photo</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        {% if l_photo and l_photo.photo_encrypted_path %}
+        <img src="{{ url_for('photo.serve_photo', photo_id=l_photo.id) }}"
+             onclick="viewPhoto(this.src, this.dataset.name)"
+             data-name="{{ req.landlord.full_name | e }}"
+             style="width:50px;height:50px;border-radius:50%;object-fit:cover;border:2px solid var(--grey-300);cursor:zoom-in"
+             title="Click to view full size"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div style="display:none;width:50px;height:50px;border-radius:50%;background:var(--grey-200);align-items:center;justify-content:center;font-size:18px">📷</div>
+        {% else %}
+        <div style="width:50px;height:50px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-size:18px">📷</div>
+        {% endif %}
+        <div>
+          <div style="font-weight:600;font-size:13px">{{ req.landlord.full_name }}</div>
+          {% if l_photo %}
+          <span class="badge badge-success" style="font-size:10px;margin-top:3px">✓ Photo on file</span>
+          {% else %}
+          <span class="badge badge-warning" style="font-size:10px;margin-top:3px">Pending</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}{# end role split #}
+
+    </div>
+  </div>
+  {% endif %}{# end req.agreement_id #}
+
+</div><!-- /right -->
+</div><!-- /grid-2 -->
+
+<script>
+const THREAD_ID    = {{ thread.id if thread else 'null' }};
+const CSRF_TOKEN   = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+const AGREEMENT_ID = {{ req.agreement_id or 'null' }};
+const I_AM_LANDLORD = {{ 'true' if current_user.id == req.landlord_id else 'false' }};
+let lastMsgId = {{ messages[-1].id if messages else 0 }};
+
+// ── CHAT ─────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderMsg(m) {
+  const cls  = m.is_system ? 'system-msg' : (m.is_mine ? 'mine' : 'other');
+  const meta = m.is_system ? '' : `<div class="msg-meta">${escHtml(m.sender_name)} &bull; ${escHtml(m.sent_at)}</div>`;
+  return `<div class="chat-msg ${cls}"><div class="bubble">${escHtml(m.text)}</div>${meta}</div>`;
+}
+
+async function sendChatMsg() {
+  if (!THREAD_ID) { showToast('Chat not ready yet, reload the page.', 'error'); return; }
+  const ta   = document.getElementById('chatText');
+  const text = (ta.value || '').trim();
+  if (!text) return;
+  const btn  = document.querySelector('.chat-input button');
+  if (btn) btn.disabled = true;
+  ta.value = '';
+  ta.style.height = 'auto';
+  try {
+    const r = await fetch(`/chat/thread/${THREAD_ID}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const d = await r.json();
+    if (d.success) { appendMsg(d.message); lastMsgId = d.message.id; }
+    else { showToast(d.error || 'Failed to send.', 'error'); ta.value = text; }
+  } catch (e) { showToast('Network error — message not sent.', 'error'); ta.value = text; }
+  finally { if (btn) btn.disabled = false; }
+}
+
+function appendMsg(m) {
+  const box = document.getElementById('chatMessages');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', renderMsg(m));
+  box.scrollTop = box.scrollHeight;
+}
+
+async function pollMessages() {
+  if (!THREAD_ID) return;
+  try {
+    const r = await fetch(`/chat/thread/${THREAD_ID}/messages?since=${lastMsgId}`);
+    const d = await r.json();
+    if (d.messages && d.messages.length) {
+      d.messages.forEach(m => { appendMsg(m); lastMsgId = Math.max(lastMsgId, m.id); });
+    }
+  } catch {}
+}
+
+// ── PHOTO MODAL VIEWER ────────────────────────────────────────────────────────
+function viewPhoto(src, name) {
+  openModal(`
+    <div style="text-align:center">
+      <div class="modal-title" style="margin-bottom:12px">📷 ${escHtml(name)}</div>
+      <img src="${escHtml(src)}" style="max-width:100%;max-height:65vh;border-radius:8px;object-fit:contain" alt="Identity photo">
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  `);
+}
+
+// ── DOCUMENT INLINE PREVIEW TOGGLE ───────────────────────────────────────────
+function viewDocInline() {
+  const box = document.getElementById('docPreviewBox');
+  if (!box) return;
+  const shown = box.style.display !== 'none';
+  box.style.display = shown ? 'none' : 'block';
+}
+
+// ── AJAX: APPROVE IDENTITY DOCUMENT ──────────────────────────────────────────
+async function ajaxApproveDoc(agreementId) {
+  openModal(`
+    <div class="modal-title">Approve Identity Document</div>
+    <div class="modal-body" style="font-size:14px">
+      This confirms you have visually verified the tenant's identity document is genuine and matches the tenant's photo.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-success" onclick="_doApproveDoc(${agreementId})">✓ Confirm Approval</button>
+    </div>
+  `);
+}
+
+async function _doApproveDoc(agreementId) {
+  closeModal();
+  try {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    const r = await fetch(`/photos/approve-document/${agreementId}`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF_TOKEN, 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    });
+    if (!r.ok && r.status !== 200) {
+      showToast('Server error ' + r.status + ' — try reloading the page.', 'error');
+      return;
+    }
+    const d = await r.json();
+    if (d.success) {
+      showToast('Document approved. Tenant has been notified.', 'success');
+      // Update the approval status block without reload
+      const statusEl = document.getElementById('docApprovalStatus');
+      if (statusEl) {
+        statusEl.innerHTML = `
+          <span class="badge badge-success">✓ Approved on ${escHtml(d.approved_at || 'today')}</span>
+          <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px" onclick="promptRejectDoc()">Revoke &amp; Reject</button>
+        `;
+      }
+    } else {
+      showToast(d.message || 'Approval failed', 'error');
+    }
+  } catch { showToast('Network error — please try again', 'error'); }
+}
+
+// ── AJAX: REJECT IDENTITY DOCUMENT ───────────────────────────────────────────
+function promptRejectDoc() {
+  openModal(`
+    <div class="modal-title" style="color:var(--danger)">✗ Reject Identity Document</div>
+    <div class="modal-body" style="font-size:13px;margin-bottom:12px">
+      The document file will be <strong>deleted immediately</strong> and the tenant will be
+      notified via encrypted chat to re-upload a valid document.
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Reason for rejection (sent to tenant)</label>
+      <input type="text" id="rejectReasonInput" class="form-control"
+             placeholder="e.g. Photo unclear, document expired, wrong document type…"
+             style="width:100%;box-sizing:border-box">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="_doRejectDoc(${AGREEMENT_ID})">Delete &amp; Reject</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById('rejectReasonInput')?.focus(), 50);
+}
+
+async function _doRejectDoc(agreementId) {
+  const reason = (document.getElementById('rejectReasonInput')?.value || '').trim();
+  closeModal();
+  const fd = new FormData();
+  if (reason) fd.append('reason', reason);
+  fd.append('csrf_token', CSRF_TOKEN);
+  try {
+    const r = await fetch(`/photos/reject-document/${agreementId}`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF_TOKEN },
+      body: fd,
+    });
+    if (!r.ok && r.status !== 200) {
+      showToast('Server error ' + r.status + ' — try reloading the page.', 'error');
+      return;
+    }
+    const d = await r.json();
+    if (d.success) {
+      showToast(d.message, 'info');
+      // Replace doc box with "waiting" message
+      const docBox = document.getElementById('docBox');
+      if (docBox) {
+        docBox.outerHTML = `
+          <div id="docBox" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:2px">
+            <div style="font-size:13px;font-weight:600;color:#991b1b;margin-bottom:4px">❌ Document rejected</div>
+            <div style="font-size:12px;color:#991b1b">Tenant has been notified. Waiting for them to re-upload a valid document.</div>
+          </div>`;
+      }
+    } else {
+      showToast(d.message || 'Rejection failed', 'error');
+    }
+  } catch { showToast('Network error — please try again', 'error'); }
+}
+
+// ── GUIDE BAR ─────────────────────────────────────────────────────────────────
+// Persistent sticky bar showing exactly what to do right now.
+const GUIDE_STATES = {
+  // [icon, bg-color, line1, line2, actionLabel?, actionHref?]
+  waiting:  ['⏳', '#334155', null, null],
+  my_turn:  ['👆', '#1d4ed8', null, null],
+  warning:  ['⚠️',  '#92400e', null, null],
+  done:     ['✅', '#166534', null, null],
+  reload:   ['🔄', '#7c3aed', 'Page updated by the other party', 'Click Reload to see the latest changes'],
+};
+
+function setGuide(icon, bg, line1, line2, { actionLabel, actionHref, showReload } = {}) {
+  document.getElementById('guideIcon').textContent   = icon;
+  document.getElementById('guideInner').style.background = bg;
+  document.getElementById('guideLine1').textContent  = line1 || '';
+  document.getElementById('guideLine2').textContent  = line2 || '';
+
+  const rb  = document.getElementById('guideReloadBtn');
+  const ab  = document.getElementById('guideActionBtn');
+  rb.style.display  = showReload  ? 'inline-block' : 'none';
+  if (actionLabel && actionHref) {
+    ab.textContent  = actionLabel;
+    ab.href         = actionHref;
+    ab.style.display = 'inline-block';
+  } else {
+    ab.style.display = 'none';
+  }
+}
+
+function computeGuide(data) {
+  // data can be null (use page-load defaults) or a status-poll JSON object
+  const status      = data ? data.status         : '{{ req.status }}';
+  const hasAgreement= data ? !!data.agreement_id : {{ 'true' if req.agreement_id else 'false' }};
+  const myTermsOk   = data ? data.my_terms_approved : {{ 'true' if my_terms_approval and my_terms_approval.approved else 'false' }};
+  const termsBoth   = data ? data.terms_both  : {{ 'true' if terms_both else 'false' }};
+  const lSigned     = data ? data.landlord_signed : {{ 'true' if agreement and agreement.landlord_signature else 'false' }};
+  const tSigned     = data ? data.tenant_signed   : {{ 'true' if agreement and agreement.tenant_signature else 'false' }};
+  const pdfReady    = data ? data.pdf_ready   : {{ 'true' if gen_pdf else 'false' }};
+  const isLandlord  = I_AM_LANDLORD;
+  const byLandlord  = {{ 'true' if req.initiated_by_landlord else 'false' }};
+  const myPhoto     = {{ 'true' if my_photo else 'false' }};
+  const photoUrl    = {{ url_for('photo.capture_photo', agreement_id=req.agreement_id, return_to='request') | tojson if req.agreement_id else 'null' }};
+
+  if (pdfReady) {
+    return setGuide('🎉', '#166534', 'Agreement fully signed and certified!',
+      'Download the PDF certificate from the top-right button.');
+  }
+
+  if (status === 'fully_signed') {
+    return setGuide('🔐', '#166534', 'Both parties have signed.', 'PDF is being generated — reload in a moment.');
+  }
+
+  if (status === 'rejected') {
+    return setGuide('❌', '#7f1d1d', 'This request was rejected.', 'No further action is needed.');
+  }
+
+  // Waiting for the other party on terms
+  if (myTermsOk && !termsBoth) {
+    return setGuide('⏳', '#334155',
+      'Waiting for the other party to approve the terms.',
+      'You will be notified via chat when they respond. No action needed right now.');
+  }
+
+  // Waiting for other party to sign
+  const iAlreadySigned = isLandlord ? lSigned : tSigned;
+  if (hasAgreement && iAlreadySigned && (isLandlord ? !tSigned : !lSigned)) {
+    return setGuide('⏳', '#334155',
+      'Waiting for the other party to sign.',
+      'You have already signed. Reload the page to check for updates.');
+  }
+
+  // My turn — specific actions
+  if (status === 'pending' && !byLandlord && isLandlord) {
+    return setGuide('👆', '#1d4ed8', 'Your turn: Start reviewing this request.',
+      'Click "Start Review & Open Chat" in Step 1 below to begin.');
+  }
+  if (status === 'pending' && byLandlord && !isLandlord) {
+    return setGuide('⚠️', '#92400e', 'Action required: Accept or reject this agreement.',
+      'The landlord created an agreement for you. Scroll to Step 1.');
+  }
+  if ((status === 'under_review' || status === 'negotiating') && !myTermsOk) {
+    return setGuide('👆', '#1d4ed8', 'Your turn: Approve the proposed terms.',
+      'Check the rent and dates in Step 2, then click "I Agree to These Terms".');
+  }
+  if (hasAgreement && !myPhoto) {
+    return setGuide('⚠️', '#92400e', 'Required: Capture your identity photo (Step 3).',
+      'You must submit your photo before you can sign. See the Identity Verification panel →',
+      { actionLabel: '📷 Capture Photo', actionHref: photoUrl });
+  }
+  if (hasAgreement && myPhoto && !iAlreadySigned) {
+    if (!isLandlord && !lSigned) {
+      return setGuide('⏳', '#334155', 'Waiting for landlord to sign first.',
+        'Once the landlord signs, you can verify and countersign.');
+    }
+    return setGuide('👆', '#1d4ed8', 'Your turn: Sign the agreement digitally (Step 4).',
+      'Click "Sign with Digital Certificate" to complete your RSA-2048 signature.');
+  }
+
+  // Default: waiting
+  setGuide('⏳', '#334155', 'Processing…', 'Waiting for the next step to become available.');
+}
+
+// ── STATUS POLLING (with guide update, no auto-reload) ────────────────────────
+function initRequestStatusPolling(reqId, intervalMs) {
+  const badge = document.getElementById('req-status-badge');
+  if (!badge) return;
+  let lastStatus = badge.dataset.status || '';
+
+  setInterval(async () => {
+    try {
+      const res  = await fetch(`/requests/${reqId}/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.status !== lastStatus) {
+        lastStatus = data.status;
+        badge.textContent = data.status_label;
+        badge.className   = 'badge ' + _statusBadgeClass(data.status);
+        // Show "reload" in guide bar instead of hard reload
+        setGuide('🔄', '#7c3aed',
+          'The other party just took an action — page has new content.',
+          'Click Reload Page to see the latest updates.',
+          { showReload: true });
+      } else {
+        computeGuide(data);
+      }
+    } catch {}
+  }, intervalMs || 5000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const chatBox = document.getElementById('chatMessages');
+  if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  if (THREAD_ID) setInterval(pollMessages, 3000);
+  // Guide bar: compute from server-rendered state immediately
+  computeGuide(null);
+  // Start polling (will update guide via computeGuide(data) each tick)
+  initRequestStatusPolling({{ req.id }}, 5000);
+});
+</script>
+{% endblock %}

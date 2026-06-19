@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Admin — Agreements{% endblock %}
+{% block page_title %}Agreement Management{% endblock %}
+{% block content %}
+
+<div class="page-header pop-in">
+  <div class="page-header-left"><h1>All Agreements</h1><p style="color:var(--gray-500)">{{ agreements|length }} agreement(s)</p></div>
+</div>
+
+<form method="GET" style="display:flex;gap:10px;margin-bottom:1.5rem" class="pop-in">
+  <select name="status" class="form-control" style="max-width:200px">
+    <option value="">All Status</option>
+    {% for s in ['pending_signatures','landlord_signed','fully_signed','verified','draft'] %}
+    <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-outline">Filter</button>
+  {% if status %}<a href="{{ url_for('admin.agreements') }}" class="btn btn-ghost">Clear</a>{% endif %}
+</form>
+
+<div class="card pop-in">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>UID</th><th>Category</th><th>Landlord</th><th>Tenant</th><th>Rent</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for ag in agreements %}
+        <tr>
+          <td class="font-mono" style="font-size:11px">{{ ag.agreement_uid[:14] if ag.agreement_uid else '—' }}...</td>
+          <td>{{ ag.rental_category or '—' }}</td>
+          <td style="font-size:.85rem">{{ ag.landlord.full_name if ag.landlord else '—' }}</td>
+          <td style="font-size:.85rem">{{ ag.tenant.full_name if ag.tenant else '—' }}</td>
+          <td>{{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}</td>
+          <td><span class="badge {% if ag.status=='fully_signed' %}badge-success{% elif ag.status=='pending_signatures' %}badge-warning{% else %}badge-grey{% endif %}">{{ ag.status }}</span></td>
+          <td>
+            <form method="POST" action="{{ url_for('admin.delete_agreement', ag_id=ag.id) }}"
+                  onsubmit="return confirm('Delete this agreement?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm" style="background:var(--danger);color:#fff">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gray-400)">No agreements found</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

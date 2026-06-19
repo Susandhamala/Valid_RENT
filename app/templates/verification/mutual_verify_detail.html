@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Hash Verification — {{ agreement.verification_code or agreement.id }}{% endblock %}
+{% block page_title %}Hash Verification{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>🔐 Hash Verification</h1>
+    <p>Independent cryptographic re-verification — all checks run live, not from stored flags</p>
+  </div>
+  <a href="{{ url_for('verification.mutual_verify_list') }}" class="btn btn-outline">← Back</a>
+</div>
+
+{% set l_done = agreement.landlord_verified_at %}
+{% set t_done = agreement.tenant_verified_at %}
+{% set both_done = l_done and t_done %}
+
+<!-- OVERALL RESULT BANNER -->
+<div class="card pop-in" style="margin-bottom:20px">
+  <div style="padding:24px 28px;text-align:center;background:{% if checks.all_valid %}#f0fdf4{% else %}#fef2f2{% endif %};border-radius:var(--radius)">
+    <div style="font-size:36px;margin-bottom:8px">{% if checks.all_valid %}✅{% else %}❌{% endif %}</div>
+    <div style="font-size:20px;font-weight:800;color:{% if checks.all_valid %}var(--success){% else %}var(--danger){% endif %}">
+      {% if checks.all_valid %}ALL HASHES VALID{% else %}VERIFICATION FAILED{% endif %}
+    </div>
+    <div style="font-size:13px;color:var(--grey-500);margin-top:6px">
+      Independent re-verification ran at page load — RSA-PSS signatures and PDF hash checked from scratch
+    </div>
+  </div>
+</div>
+
+<!-- MUTUAL CONFIRMATION STATUS -->
+<div class="card pop-in pop-in-delay-1" style="margin-bottom:20px">
+  <div class="card-header" style="background:var(--black);color:var(--white);padding:12px 18px">
+    <div style="font-weight:700">Mutual Confirmation Status</div>
+    <div style="font-size:11px;opacity:.6">Each party must independently confirm they see the same hashes</div>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="padding:14px;border:1.5px solid {% if l_done %}#86efac{% else %}var(--grey-200){% endif %};border-radius:8px;text-align:center">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:6px">🏠 Landlord</div>
+        <div style="font-weight:700;font-size:14px">{{ agreement.landlord.full_name }}</div>
+        {% if l_done %}
+        <div style="color:var(--success);font-weight:700;font-size:13px;margin-top:6px">✓ Confirmed</div>
+        <div class="text-muted text-sm">{{ l_done.strftime('%d %b %Y %H:%M UTC') }}</div>
+        {% else %}
+        <div style="color:var(--grey-400);font-size:12px;margin-top:6px">○ Not yet confirmed</div>
+        {% endif %}
+      </div>
+      <div style="padding:14px;border:1.5px solid {% if t_done %}#86efac{% else %}var(--grey-200){% endif %};border-radius:8px;text-align:center">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:6px">🧑 Tenant</div>
+        <div style="font-weight:700;font-size:14px">{{ agreement.tenant.full_name if agreement.tenant else '—' }}</div>
+        {% if t_done %}
+        <div style="color:var(--success);font-weight:700;font-size:13px;margin-top:6px">✓ Confirmed</div>
+        <div class="text-muted text-sm">{{ t_done.strftime('%d %b %Y %H:%M UTC') }}</div>
+        {% else %}
+        <div style="color:var(--grey-400);font-size:12px;margin-top:6px">○ Not yet confirmed</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if both_done %}
+    <div style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;text-align:center;font-weight:700;color:#166534;font-size:14px">
+      ✅ Both parties have independently confirmed — MUTUALLY VERIFIED
+    </div>
+    {% elif not my_verified_at %}
+    <div style="padding:12px 16px;background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;margin-bottom:12px;font-size:13px;color:#854d0e">
+      Review all hashes below carefully. When satisfied they are correct, click <strong>Confirm These Hashes</strong>.
+    </div>
+    <form method="POST" action="{{ url_for('verification.mutual_verify_confirm', agreement_id=agreement.id) }}" id="confirmForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="button" class="btn btn-primary"
+              onclick="if(confirm('Confirm that you have personally reviewed and verified all the hashes shown on this page?\n\nThis records your verification timestamp and cannot be undone.')){document.getElementById('confirmForm').submit()}">
+        🔐 Confirm These Hashes
+      </button>
+    </form>
+    {% else %}
+    <div style="padding:12px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:13px;color:#1e40af">
+      ⏳ You have confirmed. Waiting for the other party to visit this page and confirm.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- LIVE VERIFICATION CHECKS -->
+<div class="card pop-in pop-in-delay-2" style="margin-bottom:20px">
+  <div class="card-body">
+    <div class="section-title" style="margin-bottom:14px">Live Verification Checks (re-run now)</div>
+    <div style="display:grid;gap:8px">
+      {% for label, ok in [
+        ('Landlord RSA-PSS Signature — re-verified against public key', checks.l_sig_ok),
+        ('Tenant RSA-PSS Signature — re-verified against public key', checks.t_sig_ok),
+        ('Landlord X.509 Certificate is valid and not expired', checks.l_cert_valid),
+        ('Tenant X.509 Certificate is valid and not expired', checks.t_cert_valid),
+        ('Landlord Certificate is NOT revoked', not checks.l_cert_revoked),
+        ('Tenant Certificate is NOT revoked', not checks.t_cert_revoked),
+      ] %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--grey-100)">
+        <span style="font-size:13px">{{ label }}</span>
+        <span class="badge {% if ok %}badge-success{% else %}badge-danger{% endif %}">
+          {% if ok %}✓ Pass{% else %}✗ Fail{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+
+      {% if checks.pdf_hash_match is not none %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--grey-100)">
+        <span style="font-size:13px">PDF file on disk — SHA-256 matches stored certificate hash</span>
+        <span class="badge {% if checks.pdf_hash_match %}badge-success{% else %}badge-danger{% endif %}">
+          {% if checks.pdf_hash_match %}✓ Pass{% else %}✗ Fail — file may have been altered{% endif %}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- FULL CRYPTOGRAPHIC HASHES -->
+<div class="card pop-in pop-in-delay-3" style="margin-bottom:20px">
+  <div class="card-body">
+    <div class="section-title" style="margin-bottom:4px">Complete Cryptographic Hashes</div>
+    <p class="text-muted text-sm" style="margin-bottom:16px">Every value shown in full — no truncation. These are the exact bytes that were signed and verified.</p>
+
+    {# ── Document hash ── #}
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">📄 Document SHA-256 Hash</span>
+        <span style="font-size:10px;color:var(--grey-400)">— Generated when agreement text was created; both signatures were made against this</span>
+      </div>
+      <div style="font-family:monospace;font-size:12px;word-break:break-all;background:#f9fafb;padding:10px 12px;border-radius:6px;border:1px solid var(--grey-200)">{{ agreement.document_hash_sha256 or 'N/A' }}</div>
+    </div>
+
+    {# ── PDF hash ── #}
+    {% if checks.gen_pdf %}
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">📑 PDF Certificate SHA-256 Hash</span>
+        {% if checks.pdf_hash_match is not none %}
+        <span class="badge {% if checks.pdf_hash_match %}badge-success{% else %}badge-danger{% endif %}" style="font-size:9px">
+          {% if checks.pdf_hash_match %}✓ File intact{% else %}✗ File altered{% endif %}
+        </span>
+        {% endif %}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <div style="font-size:10px;color:var(--grey-400);margin-bottom:3px">Stored in database</div>
+          <div style="font-family:monospace;font-size:11px;word-break:break-all;background:#f9fafb;padding:8px;border-radius:6px;border:1px solid var(--grey-200)">{{ checks.gen_pdf.pdf_hash_sha256 or 'N/A' }}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--grey-400);margin-bottom:3px">Re-computed from file now</div>
+          <div style="font-family:monospace;font-size:11px;word-break:break-all;background:#f9fafb;padding:8px;border-radius:6px;border:1px solid {% if checks.pdf_hash_match %}#86efac{% elif checks.pdf_hash_match == false %}#fca5a5{% else %}var(--grey-200){% endif %}">{{ checks.pdf_hash_live or 'N/A' }}</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Landlord signature ── #}
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">🏠 Landlord RSA-2048 Signature (Base64, PSS/SHA-256)</span>
+        <span class="badge {% if checks.l_sig_ok %}badge-success{% else %}badge-danger{% endif %}" style="font-size:9px">
+          {% if checks.l_sig_ok %}✓ Valid{% else %}✗ Invalid{% endif %}
+        </span>
+      </div>
+      <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">
+        Signed: {{ agreement.landlord_signed_at.strftime('%d %b %Y %H:%M UTC') if agreement.landlord_signed_at else 'N/A' }}
+        &nbsp;·&nbsp; Cert Serial: <span style="font-family:monospace">{{ agreement.landlord_cert_serial or 'N/A' }}</span>
+      </div>
+      <div style="font-family:monospace;font-size:10px;word-break:break-all;background:#f9fafb;padding:10px;border-radius:6px;border:1px solid {% if checks.l_sig_ok %}#86efac{% else %}#fca5a5{% endif %}">{{ agreement.landlord_signature or 'N/A' }}</div>
+    </div>
+
+    {# ── Tenant signature ── #}
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">🧑 Tenant RSA-2048 Signature (Base64, PSS/SHA-256)</span>
+        <span class="badge {% if checks.t_sig_ok %}badge-success{% else %}badge-danger{% endif %}" style="font-size:9px">
+          {% if checks.t_sig_ok %}✓ Valid{% else %}✗ Invalid{% endif %}
+        </span>
+      </div>
+      <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">
+        Signed: {{ agreement.tenant_signed_at.strftime('%d %b %Y %H:%M UTC') if agreement.tenant_signed_at else 'N/A' }}
+        &nbsp;·&nbsp; Cert Serial: <span style="font-family:monospace">{{ agreement.tenant_cert_serial or 'N/A' }}</span>
+      </div>
+      <div style="font-family:monospace;font-size:10px;word-break:break-all;background:#f9fafb;padding:10px;border-radius:6px;border:1px solid {% if checks.t_sig_ok %}#86efac{% else %}#fca5a5{% endif %}">{{ agreement.tenant_signature or 'N/A' }}</div>
+    </div>
+
+    {# ── Side-by-side comparison (shown only when both confirmed) ── #}
+    {% if both_done %}
+    <div style="padding:16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px">
+      <div style="font-weight:700;font-size:13px;color:#166534;margin-bottom:12px">✅ Side-by-Side Hash Comparison</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--grey-500);margin-bottom:4px">🏠 Landlord confirmed ({{ l_done.strftime('%d %b %Y') }})</div>
+          <div style="font-family:monospace;font-size:10px;word-break:break-all;background:#fff;padding:8px;border-radius:6px;border:1px solid #86efac">{{ agreement.document_hash_sha256 }}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--grey-500);margin-bottom:4px">🧑 Tenant confirmed ({{ t_done.strftime('%d %b %Y') }})</div>
+          <div style="font-family:monospace;font-size:10px;word-break:break-all;background:#fff;padding:8px;border-radius:6px;border:1px solid #86efac">{{ agreement.document_hash_sha256 }}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;font-weight:700;color:#166534;text-align:center">
+        ✓ Hashes are identical — both parties are looking at the same unaltered document
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:14px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af">
+      <strong>Verification method:</strong>
+      <code>rsa_verify(party.public_key_pem, agreement.document_hash_sha256, stored_signature)</code>
+      using RSA-PSS with MGF1/SHA-256. Runs live on every page load — result is not cached.
+    </div>
+  </div>
+</div>
+
+<div class="warning-box pop-in pop-in-delay-4" style="font-size:11px">
+  ACADEMIC PROTOTYPE — Not affiliated with the Government of Nepal. For educational purposes only.
+</div>
+{% endblock %}

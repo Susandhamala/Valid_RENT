@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.register_title }}{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div class="auth-layout">
+  <!-- LEFT PANEL -->
+  <div class="auth-panel-left">
+    <div style="position:relative;z-index:1">
+      <div class="auth-brand">Valid<span class="accent">Rent</span></div>
+      <div class="auth-tagline">{{ tr.register_tagline }}</div>
+      <ul class="auth-features">
+        <li>RSA-2048 key pair generated on signup</li>
+        <li>X.509 certificate issued by Valid Rent CA</li>
+        <li>Support for 10 rental categories</li>
+        <li>{{ tr.role_landlord }} or {{ tr.role_tenant }} role</li>
+        <li>Government-style PDF certificate</li>
+      </ul>
+    </div>
+    <div class="deco-cards">
+      <div class="deco-card">
+        <div class="deco-label">Key Size</div>
+        <div class="deco-value">RSA-2048</div>
+        <div class="deco-sub">Auto-generated</div>
+      </div>
+      <div class="deco-card">
+        <div class="deco-label">Certificate</div>
+        <div class="deco-value">X.509</div>
+        <div class="deco-sub">Valid Rent Demo CA</div>
+      </div>
+    </div>
+
+    <!-- Language switcher on auth pages -->
+    <div style="position:absolute;bottom:24px;left:32px;display:flex;gap:8px;z-index:2">
+      {% for code, label in supported_langs.items() %}
+      <a href="{{ url_for('set_lang', lang=code) }}"
+         style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;border:1.5px solid;
+                {% if lang == code %}background:#fff;color:#000;border-color:#fff{% else %}background:transparent;color:rgba(255,255,255,0.5);border-color:rgba(255,255,255,0.2){% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="auth-panel-right">
+    <div class="auth-form-wrap pop-in" style="max-width:460px">
+      <h2>{{ tr.register_title }}</h2>
+      <p class="auth-sub">{{ tr.register_sub }}</p>
+
+      <form method="POST" action="{{ url_for('auth.register') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">{{ tr.label_fullname }}</label>
+            <input type="text" name="full_name" class="form-control"
+                   placeholder="Your full name" required
+                   value="{{ form_data.get('full_name', '') }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ tr.label_phone }}</label>
+            <input type="text" name="phone" class="form-control"
+                   placeholder="+977 98XXXXXXXX"
+                   value="{{ form_data.get('phone', '') }}">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_email }}</label>
+          <input type="email" name="email" class="form-control"
+                 placeholder="you@example.com" required
+                 value="{{ form_data.get('email', '') }}">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_role }}</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="category-card {% if form_data.get('role','tenant')=='landlord' %}selected{% endif %}"
+                   style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px"
+                   onclick="setRole('landlord',this)">
+              <input type="radio" name="role" value="landlord" style="display:none"
+                     {% if form_data.get('role','tenant')=='landlord' %}checked{% endif %}>
+              <span style="font-size:20px">🏠</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">{{ tr.role_landlord }}</div>
+                <div style="font-size:11px;color:var(--grey-500)">{{ tr.role_landlord_sub }}</div>
+              </div>
+            </label>
+            <label class="category-card {% if form_data.get('role','tenant')=='tenant' %}selected{% endif %}"
+                   style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px"
+                   onclick="setRole('tenant',this)">
+              <input type="radio" name="role" value="tenant" style="display:none"
+                     {% if form_data.get('role','tenant')=='tenant' %}checked{% endif %}>
+              <span style="font-size:20px">👤</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">{{ tr.role_tenant }}</div>
+                <div style="font-size:11px;color:var(--grey-500)">{{ tr.role_tenant_sub }}</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_password }}</label>
+          <input type="password" name="password" id="regPassword" class="form-control"
+                 placeholder="e.g. MyR3nt@Nepal!" required>
+          <div id="pw-strength" style="margin-top:8px;padding:10px 12px;background:var(--gray-50);border-radius:8px;border:1px solid var(--gray-100)"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_confirm_password }}</label>
+          <input type="password" name="confirm_password" id="regConfirm" class="form-control"
+                 placeholder="Repeat password" required>
+          <div id="pw-match-error" style="display:none;color:#ef4444;font-size:.8rem;margin-top:4px">Passwords do not match.</div>
+        </div>
+
+        <button type="submit" id="regSubmit" class="btn btn-primary btn-full btn-lg" disabled>{{ tr.btn_create_account }}</button>
+      </form>
+
+      <div class="auth-footer-link">
+        {{ tr.register_have_account }} <a href="{{ url_for('auth.login') }}">{{ tr.register_signin }}</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function setRole(role, el) {
+  document.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('input[type=radio]').checked = true;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  initPasswordStrength('regPassword', 'pw-strength', 'regSubmit');
+  const confirm = document.getElementById('regConfirm');
+  const pw = document.getElementById('regPassword');
+  const matchErr = document.getElementById('pw-match-error');
+  function checkMatch() {
+    if (confirm.value && confirm.value !== pw.value) {
+      matchErr.style.display = 'block';
+      confirm.setCustomValidity('Passwords do not match.');
+    } else {
+      matchErr.style.display = 'none';
+      confirm.setCustomValidity('');
+    }
+  }
+  confirm.addEventListener('input', checkMatch);
+  pw.addEventListener('input', checkMatch);
+});
+</script>
+{% endblock %}

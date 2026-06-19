@@ -1,0 +1,417 @@
+{% extends "base.html" %}
+{% block title %}Identity Verification{% endblock %}
+{% block page_title %}Identity Verification{% endblock %}
+
+{% block content %}
+{# CSRF token for fetch requests #}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Identity Verification</h1>
+    <p class="text-muted text-sm">Agreement <span class="font-mono">{{ agreement.agreement_uid[:16] }}…</span></p>
+  </div>
+  <a href="{{ back_url }}" class="btn btn-outline">← Back</a>
+</div>
+
+<div style="max-width:560px;margin:0 auto">
+
+  {% if existing_photo %}
+  <div class="info-box pop-in" style="background:#f0fdf4;border-left:4px solid var(--success);margin-bottom:16px">
+    ✓ Photo on record ({{ existing_photo.captured_at.strftime('%d %b %Y') }}).
+    {% if is_tenant and existing_photo.document_path %}
+      <strong>{{ existing_photo.document_type|replace('_',' ')|title }}</strong> on file —
+      {% if existing_photo.document_approved %}
+        <span style="color:var(--success)">✓ Approved by landlord.</span>
+      {% else %}
+        <span style="color:#d97706">Pending landlord approval.</span>
+      {% endif %}
+    {% endif %}
+    You may re-submit below.
+  </div>
+  {% endif %}
+
+  <div class="card pop-in pop-in-delay-1">
+    <div class="card-body">
+
+      <!-- Privacy notice -->
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:13px;margin-bottom:20px;color:#78350f">
+        <strong>Privacy:</strong> Your photo{% if is_tenant %}/document{% endif %} is stored solely
+        as evidence for this agreement under Nepal's Electronic Transactions Act, 2063. No
+        biometric templates are created.
+      </div>
+
+      <!-- ── STEP 1: LIVE PHOTO CAPTURE ──────────────────────────────────── -->
+      <div style="margin-bottom:20px">
+        <div class="section-title" style="margin-bottom:12px">
+          Step 1 — Live Photo
+          <span id="photoBadge" style="font-size:11px;font-weight:400;color:var(--grey-400);margin-left:8px">not captured</span>
+        </div>
+
+        <!-- Camera box — all layers position:absolute, auto-starts on load -->
+        <div id="camWrap" style="position:relative;width:100%;height:300px;background:#111;border-radius:12px;overflow:hidden;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,.3)">
+
+          <!-- Layer 1: auto-start spinner (shown immediately on load) -->
+          <div id="layerSpinner" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;font-size:13px">
+            <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,.15);border-top-color:#fff;border-radius:50%;animation:_spin .8s linear infinite"></div>
+            <span style="opacity:.7">Starting camera…</span>
+          </div>
+
+          <!-- Layer 2: camera blocked / error state (hidden until error) -->
+          <div id="layerError" style="position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center">
+            <div style="font-size:40px">🚫</div>
+            <div id="errTitle"  style="color:#fff;font-weight:700;font-size:15px">Camera blocked</div>
+            <div id="errDetail" style="color:rgba(255,255,255,.65);font-size:12px;line-height:1.6;max-width:280px"></div>
+            <button onclick="camStart()" style="background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer">
+              🔄 Try Again
+            </button>
+          </div>
+
+          <!-- Layer 3: live video feed -->
+          <video id="camVideo" autoplay playsinline muted
+                 style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none"></video>
+
+          <!-- Face guide overlay (shown while video is live) -->
+          <div id="faceGuide" style="position:absolute;inset:0;display:none;pointer-events:none">
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-55%);width:140px;height:175px;border:2.5px dashed rgba(255,255,255,.45);border-radius:50%;box-shadow:0 0 0 9999px rgba(0,0,0,.25)"></div>
+            <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:rgba(255,255,255,.8);font-size:12px;font-weight:600">
+              Position your face in the oval, then click Capture
+            </div>
+          </div>
+
+          <!-- Layer 4: captured preview -->
+          <img id="camPreview"
+               style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none"
+               alt="Your captured photo">
+
+          <!-- Captured tick overlay -->
+          <div id="capturedTick" style="display:none;position:absolute;top:10px;right:12px;background:#22c55e;color:#fff;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700">
+            ✓ Captured
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button id="btnCapture" class="btn btn-success" onclick="camCapture()" style="display:none">📸 Capture Photo</button>
+          <button id="btnRetake"  class="btn btn-outline" onclick="camRetake()"  style="display:none">🔄 Retake</button>
+        </div>
+        <div id="camErr" style="font-size:12px;color:#dc2626;margin-top:6px;min-height:16px"></div>
+
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ── STEP 2: DOCUMENT (tenant only) ─────────────────────────────── -->
+      {% if is_tenant %}
+      <div style="margin-bottom:20px">
+        <div class="section-title" style="margin-bottom:12px">
+          Step 2 — Identity Document
+          {% if existing_photo and existing_photo.document_path %}
+          <span style="font-size:11px;font-weight:400;color:var(--success);margin-left:8px">✓ on file</span>
+          {% else %}
+          <span style="font-size:11px;font-weight:400;color:#dc2626;margin-left:8px">required</span>
+          {% endif %}
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px">
+          <label class="form-label">Document Type</label>
+          <select id="docType" class="form-control" onchange="checkReady()">
+            <option value="">— Select type —</option>
+            {% for val, label in document_types %}
+            <option value="{{ val }}"
+              {% if existing_photo and existing_photo.document_type == val %}selected{% endif %}>
+              {{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            Document File
+            <span style="font-weight:400;color:var(--grey-500)">(JPG, PNG, or PDF — max 8 MB)</span>
+            {% if existing_photo and existing_photo.document_path %}
+            <span style="font-weight:400;color:var(--grey-400);font-size:11px"> — leave blank to keep existing</span>
+            {% endif %}
+          </label>
+          <input type="file" id="docFile" accept=".jpg,.jpeg,.png,.pdf"
+                 class="form-control" style="padding:6px" onchange="checkReady()">
+        </div>
+      </div>
+      {% else %}
+      <div style="font-size:13px;color:var(--grey-600);background:var(--grey-50,#f9fafb);border-radius:8px;padding:12px;margin-bottom:20px">
+        ℹ As the landlord, only your photo is required. The tenant submits their identity
+        document separately for your review.
+      </div>
+      {% endif %}
+
+      <!-- ── CONSENT ─────────────────────────────────────────────────────── -->
+      <div style="background:var(--grey-100);border-radius:8px;padding:14px;margin-bottom:20px">
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" id="consentBox" onchange="checkReady()" style="margin-top:3px;flex-shrink:0">
+          <span style="font-size:13px">
+            I consent to my photo{% if is_tenant %} and identity document{% endif %} being stored
+            as verification evidence for this rental agreement under Nepal's Electronic
+            Transactions Act, 2063.
+          </span>
+        </label>
+      </div>
+
+      <!-- ── SUBMIT ──────────────────────────────────────────────────────── -->
+      <button id="btnSubmit" class="btn btn-primary btn-lg" onclick="doSubmit()" disabled>
+        ✓ Submit {% if is_tenant %}Photo &amp; Document{% else %}Photo{% endif %}
+      </button>
+      <div id="submitHint" style="font-size:12px;color:var(--grey-500);margin-top:8px;min-height:18px"></div>
+      <div id="statusBox" style="margin-top:14px"></div>
+
+      <div class="divider" style="margin-top:24px"></div>
+      <a href="{{ back_url }}" class="btn btn-ghost">← Return</a>
+
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes _spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+const AID      = {{ agreement.id }};
+const IS_TENANT = {{ 'true' if is_tenant else 'false' }};
+const HAS_DOC  = {{ 'true' if (is_tenant and existing_photo and existing_photo.document_path) else 'false' }};
+const BACK     = "{{ back_url | e }}";
+const CSRF     = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+let photoData  = null;   // base64 jpeg data-URL
+let camStream  = null;   // MediaStream | null
+let _safetyTimer = null;
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+function hide(id)   { el(id).style.display = 'none'; }
+function flex(id)   { el(id).style.display = 'flex'; }
+function block(id)  { el(id).style.display = 'block'; }
+function iblock(id) { el(id).style.display = 'inline-flex'; }
+
+function stopStream() {
+  if (_safetyTimer) { clearTimeout(_safetyTimer); _safetyTimer = null; }
+  if (camStream)    { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+}
+
+function showCamError(title, detail) {
+  stopStream();
+  hide('layerSpinner');
+  hide('faceGuide');
+  el('camVideo').style.display = 'none';
+  el('errTitle').textContent  = title;
+  el('errDetail').textContent = detail;
+  flex('layerError');
+  hide('btnCapture');
+}
+
+// ── auto-start camera ─────────────────────────────────────────────────────────
+async function camStart() {
+  stopStream();
+  el('errDetail').textContent = '';
+  hide('layerError');
+  el('camPreview').style.display   = 'none';
+  el('capturedTick').style.display = 'none';
+  hide('btnRetake');
+  hide('btnCapture');
+  flex('layerSpinner');
+  el('camErr').textContent = '';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCamError(
+      'Camera not available',
+      'Your browser requires a secure connection (HTTPS or localhost) to use the camera. Please open the app on localhost or ask your admin to enable HTTPS.'
+    );
+    return;
+  }
+
+  try {
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+    } catch {
+      try {
+        camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      } catch {
+        camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+    }
+  } catch (err) {
+    const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+    const inUse  = err.name === 'NotReadableError' || err.name === 'TrackStartError';
+    showCamError(
+      denied ? 'Camera permission denied'
+             : inUse  ? 'Camera is in use by another app'
+                      : 'Camera could not start',
+      denied ? 'Click the camera/lock icon in your browser address bar → choose Allow → then click Try Again.'
+             : inUse  ? 'Close any other app using the camera (another tab, video call, etc.) then click Try Again.'
+                      : err.message + ' — click Try Again.'
+    );
+    return;
+  }
+
+  const vid = el('camVideo');
+  vid.srcObject = camStream;
+
+  // Show video only after first real frame
+  vid.oncanplay = function () {
+    vid.oncanplay = null;
+    if (_safetyTimer) { clearTimeout(_safetyTimer); _safetyTimer = null; }
+    hide('layerSpinner');
+    vid.style.display = 'block';
+    flex('faceGuide');
+    iblock('btnCapture');
+    vid.play().catch(() => {});
+  };
+
+  // If canplay doesn't fire in 10 s → show error
+  _safetyTimer = setTimeout(() => {
+    if (!el('btnCapture').style.display.includes('flex')) {
+      showCamError(
+        'Camera timed out',
+        'The camera took too long to start. Click Try Again.'
+      );
+    }
+  }, 10000);
+}
+
+// ── capture ───────────────────────────────────────────────────────────────────
+function camCapture() {
+  const vid = el('camVideo');
+  if (!vid.videoWidth || !vid.videoHeight) {
+    el('camErr').textContent = 'Camera not ready — wait a moment and try again.';
+    return;
+  }
+  el('camErr').textContent = '';
+
+  const c = document.createElement('canvas');
+  c.width  = vid.videoWidth;
+  c.height = vid.videoHeight;
+  c.getContext('2d').drawImage(vid, 0, 0);
+  photoData = c.toDataURL('image/jpeg', 0.92);
+
+  stopStream();
+  vid.style.display = 'none';
+  hide('faceGuide');
+  hide('layerSpinner');
+
+  const prev = el('camPreview');
+  prev.src = photoData;
+  prev.style.display = 'block';
+  el('capturedTick').style.display = 'block';
+
+  hide('btnCapture');
+  iblock('btnRetake');
+  checkReady();
+}
+
+// ── retake ────────────────────────────────────────────────────────────────────
+function camRetake() {
+  photoData = null;
+  stopStream();
+  el('camPreview').style.display   = 'none';
+  el('camVideo').style.display     = 'none';
+  el('capturedTick').style.display = 'none';
+  hide('faceGuide');
+  hide('btnCapture');
+  hide('btnRetake');
+  hide('layerError');
+  el('camWrap').style.height     = '300px';
+  el('camWrap').style.background = '#111';
+  el('camErr').textContent = '';
+  checkReady();
+  camStart();  // auto-restart camera
+}
+
+// ── form validation ───────────────────────────────────────────────────────────
+function checkReady() {
+  const consent  = document.getElementById('consentBox').checked;
+  const hasPhoto = !!photoData;
+  const hints = [];
+
+  if (!hasPhoto)  hints.push('take your photo');
+  if (!consent)   hints.push('check the consent box');
+
+  let docOk = true;
+  if (IS_TENANT) {
+    const type    = document.getElementById('docType').value;
+    const hasFile = document.getElementById('docFile').files.length > 0;
+    docOk = !!type && (HAS_DOC || hasFile);
+    if (!type)               hints.push('select a document type');
+    else if (!HAS_DOC && !hasFile) hints.push('upload your identity document');
+  }
+
+  const ready = hasPhoto && consent && docOk;
+  document.getElementById('btnSubmit').disabled = !ready;
+  document.getElementById('submitHint').textContent =
+    ready ? '' : '⚠ Still needed: ' + hints.join(' · ');
+
+  const badge = document.getElementById('photoBadge');
+  badge.textContent  = hasPhoto ? '✓ ready' : 'not captured';
+  badge.style.color  = hasPhoto ? 'var(--success)' : 'var(--grey-400)';
+}
+
+// ── submit ────────────────────────────────────────────────────────────────────
+async function doSubmit() {
+  if (!photoData) return;
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Uploading…';
+  document.getElementById('statusBox').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('photo_data', photoData);
+  fd.append('consent', 'true');
+  fd.append('csrf_token', CSRF);
+
+  if (IS_TENANT) {
+    const typeEl = document.getElementById('docType');
+    const fileEl = document.getElementById('docFile');
+    if (typeEl.value)   fd.append('document_type',  typeEl.value);
+    if (fileEl.files[0]) fd.append('document_file', fileEl.files[0]);
+  }
+
+  let data;
+  try {
+    const res = await fetch('/photos/save/' + AID, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF },
+      body: fd,
+    });
+    try   { data = await res.json(); }
+    catch { data = { success: false, message: 'Server returned HTTP ' + res.status + '.' }; }
+  } catch (err) {
+    data = { success: false, message: 'Network error: ' + err.message };
+  }
+
+  if (data.success) {
+    document.getElementById('statusBox').innerHTML =
+      '<div style="padding:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;color:#15803d;font-weight:600">'
+      + '✓ ' + data.message + ' Redirecting…</div>';
+    setTimeout(() => { window.location.href = BACK; }, 1600);
+  } else {
+    document.getElementById('statusBox').innerHTML =
+      '<div style="padding:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;color:#991b1b">'
+      + '✗ ' + data.message + '</div>';
+    btn.disabled    = false;
+    btn.textContent = '✓ Submit ' + (IS_TENANT ? 'Photo & Document' : 'Photo');
+  }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  checkReady();
+  camStart();  // auto-start camera immediately — no button click needed
+});
+
+// Release camera when navigating away
+window.addEventListener('pagehide',   stopStream);
+window.addEventListener('beforeunload', stopStream);
+</script>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.btn_signin }}{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div class="auth-layout">
+  <!-- LEFT PANEL -->
+  <div class="auth-panel-left">
+    <div style="position:relative;z-index:1">
+      <div class="auth-brand">Valid<span class="accent">Rent</span></div>
+      <div class="auth-tagline">{{ tr.tagline }}</div>
+      <ul class="auth-features">
+        <li>RSA-2048 Digital Signatures</li>
+        <li>AES-256-GCM File Encryption</li>
+        <li>X.509 Certificate Authority</li>
+        <li>Facial Identity Evidence</li>
+        <li>PDF Verification Certificate</li>
+        <li>QR Code Tamper Detection</li>
+      </ul>
+    </div>
+    <div class="deco-cards">
+      <div class="deco-card">
+        <div class="deco-label">{{ tr.stat_verified }} Agreements</div>
+        <div class="deco-value">Secure</div>
+        <div class="deco-sub">RSA-PSS Signed</div>
+      </div>
+      <div class="deco-card">
+        <div class="deco-label">Document Status</div>
+        <div class="deco-value">Encrypted</div>
+        <div class="deco-sub">AES-256-GCM</div>
+      </div>
+    </div>
+
+    <!-- Language switcher on auth pages -->
+    <div style="position:absolute;bottom:24px;left:32px;display:flex;gap:8px;z-index:2">
+      {% for code, label in supported_langs.items() %}
+      <a href="{{ url_for('set_lang', lang=code) }}"
+         style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;border:1.5px solid;
+                {% if lang == code %}background:#fff;color:#000;border-color:#fff{% else %}background:transparent;color:rgba(255,255,255,0.5);border-color:rgba(255,255,255,0.2){% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="auth-panel-right">
+    <div class="auth-form-wrap pop-in">
+      <h2>{{ tr.login_welcome }}</h2>
+      <p class="auth-sub">{{ tr.login_sub }}</p>
+
+      <form method="POST" action="{{ url_for('auth.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_email }}</label>
+          <input type="email" name="email" class="form-control" placeholder="you@example.com" required autofocus>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ tr.label_password }}</label>
+          <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+        </div>
+
+        <div class="checkbox-group" style="margin-bottom:24px">
+          <input type="checkbox" id="remember" name="remember">
+          <label for="remember">{{ tr.label_remember }}</label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full btn-lg">{{ tr.btn_signin }}</button>
+      </form>
+
+      <div class="auth-footer-link">
+        {{ tr.login_no_account }} <a href="{{ url_for('auth.register') }}">{{ tr.login_create }}</a>
+      </div>
+
+      <div class="warning-box mt-6" style="font-size:11px">
+        <strong>Academic Prototype</strong> — {{ tr.academic_note }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

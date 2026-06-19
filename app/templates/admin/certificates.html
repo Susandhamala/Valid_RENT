@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Admin — Certificates{% endblock %}
+{% block page_title %}Certificate Management{% endblock %}
+{% block content %}
+
+<div class="page-header pop-in">
+  <div class="page-header-left"><h1>All Certificates</h1><p style="color:var(--gray-500)">{{ certs|length }} certificate(s)</p></div>
+</div>
+
+<div class="card pop-in">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>ID</th><th>User</th><th>Serial (partial)</th><th>Issued</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for c in certs %}
+        <tr>
+          <td>{{ c.id }}</td>
+          <td style="font-size:.85rem">{{ c.user.full_name if c.user else '—' }}<br><span style="color:var(--gray-500);font-size:.75rem">{{ c.user.email if c.user else '' }}</span></td>
+          <td class="font-mono" style="font-size:11px">{{ c.serial_number[:20] }}...</td>
+          <td style="font-size:.8rem">{{ c.issued_at.strftime('%d %b %Y') }}</td>
+          <td style="font-size:.8rem">{{ c.expires_at.strftime('%d %b %Y') }}</td>
+          <td>
+            {% if c.is_revoked %}
+            <span class="badge badge-danger">Revoked</span>
+            {% elif c.is_valid %}
+            <span class="badge badge-success">Valid</span>
+            {% else %}
+            <span class="badge badge-warning">Expired</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if not c.is_revoked %}
+            <form method="POST" action="{{ url_for('admin.revoke_cert', cert_id=c.id) }}"
+                  onsubmit="return confirm('Revoke this certificate?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="reason" value="Revoked by admin">
+              <button class="btn btn-sm" style="background:var(--danger);color:#fff">Revoke</button>
+            </form>
+            {% else %}
+            <form method="POST" action="{{ url_for('admin.restore_cert', cert_id=c.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline">Restore</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gray-400)">No certificates</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

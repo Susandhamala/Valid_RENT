@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+{% block title %}Agreements{% endblock %}
+{% block page_title %}Rental Agreements{% endblock %}
+
+{% block content %}
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Rental Agreements</h1>
+    <p>All agreements you are part of — as landlord or tenant</p>
+  </div>
+  {% if current_user.has_role('landlord') %}
+  <a href="{{ url_for('agreement.create_agreement') }}" class="btn btn-primary">+ New Agreement</a>
+  {% endif %}
+</div>
+
+<!-- ── CERTIFICATE SEARCH ─────────────────────────────────────────────────── -->
+<div class="card pop-in" style="margin-bottom:18px">
+  <div class="card-body" style="padding:14px 18px">
+    <form method="GET" action="{{ url_for('agreement.list_agreements') }}" id="certSearchForm" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative;flex:1;min-width:220px">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:15px;pointer-events:none">🔍</span>
+        <input type="text" name="q" id="certSearchInput"
+               value="{{ search_q }}"
+               placeholder="Search by Certificate No. e.g. D1F6874C…"
+               maxlength="64"
+               autocomplete="off"
+               style="width:100%;padding:9px 12px 9px 34px;border:1.5px solid {% if search_q %}var(--black){% else %}var(--grey-300){% endif %};border-radius:6px;font-size:13px;font-family:var(--font);box-sizing:border-box;outline:none"
+               onfocus="this.style.borderColor='var(--black)'"
+               onblur="this.style.borderColor=this.value?'var(--black)':'var(--grey-300)'"
+               oninput="this.value=this.value.toUpperCase();clearTimeout(window._csT);window._csT=setTimeout(()=>document.getElementById('certSearchForm').submit(),400)">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Search</button>
+      {% if search_q %}
+      <a href="{{ url_for('agreement.list_agreements') }}" class="btn btn-outline btn-sm">✕ Clear</a>
+      {% endif %}
+    </form>
+    <div style="font-size:11px;color:var(--grey-400);margin-top:6px">
+      Search only looks in <strong>fully signed</strong> agreements by certificate number. Partial codes work too.
+    </div>
+  </div>
+</div>
+
+{% if search_q %}
+  {% if agreements %}
+  <div style="padding:10px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600;color:#166534">
+    ✅ {{ agreements|length }} agreement{{ 's' if agreements|length != 1 }} found for certificate <code style="background:#dcfce7;padding:1px 6px;border-radius:4px;font-size:12px">{{ search_q }}</code>
+  </div>
+  {% else %}
+  <div style="padding:10px 16px;background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600;color:#854d0e">
+    ⚠ No fully signed agreement found with that certificate number. Try a longer code or check your downloaded PDF.
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if agreements %}
+<div style="display:flex;flex-direction:column;gap:14px">
+  {% for ag in agreements %}
+  {% set is_landlord = current_user.id == ag.landlord_id %}
+  <div class="card pop-in" style="animation-delay:{{ loop.index0 * 0.04 }}s">
+    <div class="card-body" style="padding:0">
+
+      <!-- TOP BAR: role + status + actions -->
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--grey-100);flex-wrap:wrap">
+        <!-- Your role -->
+        {% if is_landlord %}
+        <span style="background:#e8f4e8;color:#166534;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:.4px">YOU ARE LANDLORD</span>
+        {% else %}
+        <span style="background:#eff6ff;color:#1e40af;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:.4px">YOU ARE TENANT</span>
+        {% endif %}
+
+        <!-- Status -->
+        {% if ag.status in ('fully_signed','verified') %}
+        <span class="badge badge-success">✓ Fully Signed</span>
+        {% elif ag.status == 'landlord_signed' %}
+        <span class="badge badge-info">Landlord Signed — Awaiting Tenant</span>
+        {% elif ag.status in ('pending_tenant','pending_signatures') %}
+        <span class="badge badge-warning">Awaiting Signatures</span>
+        {% elif ag.status == 'cancelled' %}
+        <span class="badge badge-danger">Cancelled</span>
+        {% else %}
+        <span class="badge badge-grey">{{ ag.status.replace('_',' ').title() }}</span>
+        {% endif %}
+
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <!-- PDF cert -->
+          {% if ag.final_pdf_status == 'generated' %}
+          <a href="{{ url_for('pdf.view_certificate', agreement_id=ag.id) }}" class="btn btn-sm btn-outline">📄 Certificate</a>
+          {% endif %}
+
+          <a href="{{ url_for('agreement.view_agreement', agreement_id=ag.id) }}" class="btn btn-sm btn-primary">View Details →</a>
+
+          <!-- Delete controls -->
+          {% if not ag.is_fully_signed %}
+          <form method="POST" action="{{ url_for('agreement.delete_agreement', agreement_id=ag.id) }}"
+                style="display:inline"
+                onsubmit="return confirm('Delete this agreement permanently?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm"
+                    style="background:transparent;color:#dc2626;border:1px solid #dc2626;padding:3px 10px">Delete</button>
+          </form>
+          {% else %}
+            {% set i_req = (current_user.id == ag.landlord_id and ag.landlord_delete_requested)
+                        or (current_user.id == ag.tenant_id   and ag.tenant_delete_requested) %}
+            {% if i_req %}
+            <span style="font-size:11px;color:#f59e0b;font-weight:600">⏳ Deletion pending other party</span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- MAIN CONTENT: parties + property + rent + signing -->
+      <div style="padding:14px 16px">
+        <div class="grid-2" style="gap:16px;align-items:start">
+
+          <!-- LEFT: Parties -->
+          <div>
+            <!-- Landlord row -->
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <div style="width:38px;height:38px;border-radius:50%;background:var(--black);color:var(--white);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0">
+                {{ ag.landlord.full_name[0].upper() }}
+              </div>
+              <div style="min-width:0">
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px">Landlord</div>
+                <div style="font-weight:700;font-size:14px">{{ ag.landlord.full_name }}</div>
+                <div class="text-muted text-sm">{{ ag.landlord.email }}</div>
+              </div>
+              {% if ag.landlord_signature %}
+              <span style="margin-left:auto;color:#16a34a;font-size:12px;font-weight:700;flex-shrink:0">✓ Signed</span>
+              {% else %}
+              <span style="margin-left:auto;color:#d97706;font-size:12px;flex-shrink:0">○ Pending</span>
+              {% endif %}
+            </div>
+
+            <div style="border-left:2px solid var(--grey-200);margin-left:19px;padding-left:10px;margin-bottom:10px;height:14px"></div>
+
+            <!-- Tenant row -->
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:38px;height:38px;border-radius:50%;background:var(--grey-200);color:var(--black);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0">
+                {{ ag.tenant.full_name[0].upper() if ag.tenant else '?' }}
+              </div>
+              <div style="min-width:0">
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px">Tenant</div>
+                <div style="font-weight:700;font-size:14px">{{ ag.tenant.full_name if ag.tenant else 'Not assigned' }}</div>
+                <div class="text-muted text-sm">{{ ag.tenant.email if ag.tenant else '—' }}</div>
+              </div>
+              {% if ag.tenant_signature %}
+              <span style="margin-left:auto;color:#16a34a;font-size:12px;font-weight:700;flex-shrink:0">✓ Signed</span>
+              {% else %}
+              <span style="margin-left:auto;color:#d97706;font-size:12px;flex-shrink:0">○ Pending</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- RIGHT: Property + financial details -->
+          <div>
+            {% if ag.asset %}
+            <div style="background:var(--grey-50,#f9fafb);border-radius:8px;padding:12px;margin-bottom:10px">
+              <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Property</div>
+              <div style="font-weight:700;font-size:14px">{{ ag.asset.asset_title }}</div>
+              {% if ag.asset.location %}
+              <div class="text-muted text-sm">📍 {{ ag.asset.location }}</div>
+              {% endif %}
+              <div class="text-muted text-sm">{{ ag.asset.category.name if ag.asset.category else ag.rental_category }}</div>
+            </div>
+            {% else %}
+            <div style="font-size:13px;color:var(--grey-500);margin-bottom:10px">Category: {{ ag.rental_category or '—' }}</div>
+            {% endif %}
+
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px">Monthly Rent</div>
+                <div style="font-weight:700;font-size:16px">{{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}</div>
+              </div>
+              {% if ag.start_date %}
+              <div>
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px">Period</div>
+                <div style="font-size:13px">{{ ag.start_date.strftime('%d %b %Y') }}</div>
+                {% if ag.end_date %}<div style="font-size:12px;color:var(--grey-500)">→ {{ ag.end_date.strftime('%d %b %Y') }}</div>{% endif %}
+              </div>
+              {% endif %}
+              <div>
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:.4px">Created</div>
+                <div style="font-size:13px">{{ ag.created_at.strftime('%d %b %Y') }}</div>
+              </div>
+            </div>
+
+            <!-- Signing timestamps if done -->
+            {% if ag.landlord_signed_at or ag.tenant_signed_at %}
+            <div style="margin-top:10px;font-size:11px;color:var(--grey-500)">
+              {% if ag.landlord_signed_at %}Landlord signed {{ ag.landlord_signed_at.strftime('%d %b %Y %H:%M') }}{% endif %}
+              {% if ag.landlord_signed_at and ag.tenant_signed_at %} &bull; {% endif %}
+              {% if ag.tenant_signed_at %}Tenant signed {{ ag.tenant_signed_at.strftime('%d %b %Y %H:%M') }}{% endif %}
+            </div>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+
+      {# ── MUTUAL HASH MATCH — only for fully signed ── #}
+      {% if ag.status in ('fully_signed','verified') %}
+      {% set _l_ok = ag.landlord_verified_at %}
+      {% set _t_ok = ag.tenant_verified_at %}
+      {% set _both = _l_ok and _t_ok %}
+      {% set _mine = (is_landlord and _l_ok) or (not is_landlord and _t_ok) %}
+      {% set _other = (is_landlord and _t_ok) or (not is_landlord and _l_ok) %}
+      <div style="border-top:1px solid var(--grey-100)" id="hashWrap{{ ag.id }}">
+
+        <!-- Toggle bar -->
+        <button onclick="toggleHash({{ ag.id }})"
+                style="width:100%;background:none;border:none;padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-family:var(--font);font-size:13px;font-weight:600;color:{% if _both %}var(--success){% elif _mine %}#1d4ed8{% else %}var(--grey-600){% endif %};text-align:left"
+                id="hashToggleBtn{{ ag.id }}">
+          <span id="hashIcon{{ ag.id }}">{% if _both %}✅{% elif _mine %}⏳{% elif _other %}🔔{% else %}🔐{% endif %}</span>
+          Match Mutual Hash
+          <span id="hashSubtitle{{ ag.id }}" style="font-size:11px;font-weight:400;color:{% if _both %}var(--success){% elif _other %}#854d0e{% elif _mine %}#64748b{% else %}#64748b{% endif %}">
+            {% if _both %}— ✅ MATCH — Hashes identical{% elif _other %}— {{ ag.tenant.full_name if is_landlord else ag.landlord.full_name }} requested match{% elif _mine %}— Waiting for other party{% else %}— Click to review & request{% endif %}
+          </span>
+          <span id="hashArrow{{ ag.id }}" style="margin-left:auto;font-size:10px">▼</span>
+        </button>
+
+        <!-- Collapsible hash panel -->
+        <div id="hashPanel{{ ag.id }}" style="display:none;padding:14px 16px;background:#f9fafb;border-top:1px solid var(--grey-100)">
+
+          <!-- Live status bar (updated by polling) -->
+          <div id="hashStatus{{ ag.id }}" style="margin-bottom:12px">
+            {% if _both %}
+            <div style="padding:10px 14px;background:#f0fdf4;border:2px solid #86efac;border-radius:8px;text-align:center;font-weight:800;font-size:15px;color:#166534">
+              ✅ MATCH — Both parties confirmed identical hashes
+            </div>
+            {% elif _other %}
+            <div style="padding:10px 14px;background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;font-size:13px;font-weight:600;color:#854d0e;display:flex;align-items:center;gap:8px">
+              🔔 <span>{{ ag.tenant.full_name if is_landlord else ag.landlord.full_name }} has requested a hash match — confirm to compare</span>
+            </div>
+            {% elif _mine %}
+            <div style="padding:10px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:13px;color:#1e40af;display:flex;align-items:center;gap:8px">
+              ⏳ <span>Request sent — waiting for {{ ag.tenant.full_name if is_landlord else ag.landlord.full_name }} to confirm</span>
+            </div>
+            {% else %}
+            <div style="padding:8px 12px;background:#f1f5f9;border-radius:6px;font-size:12px;color:var(--grey-500)">
+              Request a hash match check. When both parties confirm, hashes are compared instantly.
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Party status chips -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px" id="hashChips{{ ag.id }}">
+            <div id="chipL{{ ag.id }}" style="padding:7px 10px;border:1.5px solid {% if _l_ok %}#86efac{% else %}var(--grey-200){% endif %};border-radius:6px;text-align:center;font-size:11px">
+              <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grey-400);margin-bottom:2px">🏠 Landlord</div>
+              <div style="font-weight:700;color:{% if _l_ok %}var(--success){% else %}var(--grey-400){% endif %}">
+                {% if _l_ok %}✓ {{ _l_ok.strftime('%H:%M') }}{% else %}Not requested{% endif %}
+              </div>
+            </div>
+            <div id="chipT{{ ag.id }}" style="padding:7px 10px;border:1.5px solid {% if _t_ok %}#86efac{% else %}var(--grey-200){% endif %};border-radius:6px;text-align:center;font-size:11px">
+              <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grey-400);margin-bottom:2px">🧑 Tenant</div>
+              <div style="font-weight:700;color:{% if _t_ok %}var(--success){% else %}var(--grey-400){% endif %}">
+                {% if _t_ok %}✓ {{ _t_ok.strftime('%H:%M') }}{% else %}Not requested{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Hashes (always visible when panel is open) -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--grey-500);margin-bottom:3px">📄 Document SHA-256 Hash</div>
+            <div style="font-family:monospace;font-size:10px;word-break:break-all;padding:8px 10px;background:#fff;border:1px solid var(--grey-200);border-radius:5px">{{ ag.document_hash_sha256 or 'N/A' }}</div>
+          </div>
+          <div style="margin-bottom:10px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--grey-500);margin-bottom:3px">
+              🏠 Landlord RSA-2048 Signature &nbsp;·&nbsp; <span style="font-family:monospace;font-weight:400">{{ ag.landlord_cert_serial or 'N/A' }}</span>
+            </div>
+            <div style="font-family:monospace;font-size:9px;word-break:break-all;padding:8px 10px;background:#fff;border:1px solid var(--grey-200);border-radius:5px;max-height:60px;overflow-y:auto">{{ ag.landlord_signature or 'N/A' }}</div>
+          </div>
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--grey-500);margin-bottom:3px">
+              🧑 Tenant RSA-2048 Signature &nbsp;·&nbsp; <span style="font-family:monospace;font-weight:400">{{ ag.tenant_cert_serial or 'N/A' }}</span>
+            </div>
+            <div style="font-family:monospace;font-size:9px;word-break:break-all;padding:8px 10px;background:#fff;border:1px solid var(--grey-200);border-radius:5px;max-height:60px;overflow-y:auto">{{ ag.tenant_signature or 'N/A' }}</div>
+          </div>
+
+          <!-- Action buttons -->
+          <div id="hashActions{{ ag.id }}"
+               data-confirm-url="{{ url_for('verification.mutual_verify_confirm', agreement_id=ag.id) }}"
+               data-reset-url="{{ url_for('verification.mutual_verify_reset', agreement_id=ag.id) }}"
+               data-csrf="{{ csrf_token() }}"
+               style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            {% if not _mine %}
+            <button onclick="hashRequest({{ ag.id }},'{{ url_for('verification.mutual_verify_confirm', agreement_id=ag.id) }}','{{ csrf_token() }}')"
+                    class="btn btn-primary btn-sm">
+              {% if _other %}✅ Confirm Match{% else %}🔐 Request Hash Match{% endif %}
+            </button>
+            {% endif %}
+            {% if _mine or _both %}
+            <button onclick="hashRemove({{ ag.id }},'{{ url_for('verification.mutual_verify_reset', agreement_id=ag.id) }}','{{ csrf_token() }}')"
+                    class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#dc2626">
+              ✕ Remove
+            </button>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="card pop-in">
+  <div class="card-body text-center" style="padding:60px 20px">
+    <div style="font-size:48px;margin-bottom:16px">📄</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px">No agreements yet</div>
+    <div class="text-muted">
+      {% if current_user.has_role('landlord') %}
+      <a href="{{ url_for('agreement.create_agreement') }}" style="color:var(--black)">Create your first agreement →</a>
+      {% else %}
+      Your landlord will create an agreement with you once your request is approved.
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+var _hashPollers = {};
+
+function toggleHash(id) {
+  var panel = document.getElementById('hashPanel' + id);
+  var arrow = document.getElementById('hashArrow' + id);
+  var open = panel.style.display === 'block';
+  panel.style.display = open ? 'none' : 'block';
+  arrow.textContent = open ? '▼' : '▲';
+  if (!open) {
+    _startPoll(id);
+  } else {
+    _stopPoll(id);
+  }
+}
+
+function _startPoll(id) {
+  _stopPoll(id);
+  _hashPollers[id] = setInterval(function(){ _pollStatus(id); }, 3000);
+}
+function _stopPoll(id) {
+  if (_hashPollers[id]) { clearInterval(_hashPollers[id]); delete _hashPollers[id]; }
+}
+
+function _pollStatus(id) {
+  fetch('/verify/mutual/' + id + '/status')
+    .then(function(r){ return r.json(); })
+    .then(function(d){ _applyStatus(id, d); })
+    .catch(function(){});
+}
+
+function _applyStatus(id, d) {
+  var lAt = d.landlord_at, tAt = d.tenant_at, both = d.both;
+  var myDone = d.my_done, otherDone = d.other_done;
+  var otherName = d.i_am_landlord ? d.tenant_name : d.landlord_name;
+  var myName   = d.i_am_landlord ? d.landlord_name : d.tenant_name;
+
+  // Status bar
+  var sb = document.getElementById('hashStatus' + id);
+  if (both) {
+    sb.innerHTML = '<div style="padding:10px 14px;background:#f0fdf4;border:2px solid #86efac;border-radius:8px;text-align:center;font-weight:800;font-size:15px;color:#166534">✅ MATCH — Both parties confirmed identical hashes</div>';
+  } else if (otherDone && !myDone) {
+    sb.innerHTML = '<div style="padding:10px 14px;background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;font-size:13px;font-weight:600;color:#854d0e;display:flex;align-items:center;gap:8px">🔔 <span>' + otherName + ' has requested a hash match — confirm to compare</span></div>';
+  } else if (myDone && !otherDone) {
+    sb.innerHTML = '<div style="padding:10px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:13px;color:#1e40af;display:flex;align-items:center;gap:8px">⏳ <span>Request sent — waiting for ' + otherName + ' to confirm</span></div>';
+  } else {
+    sb.innerHTML = '<div style="padding:8px 12px;background:#f1f5f9;border-radius:6px;font-size:12px;color:#64748b">Request a hash match check. When both parties confirm, hashes are compared instantly.</div>';
+  }
+
+  // Chips
+  var chipL = document.getElementById('chipL' + id);
+  var chipT = document.getElementById('chipT' + id);
+  chipL.style.borderColor = lAt ? '#86efac' : '#e2e8f0';
+  chipL.querySelector('div:last-child').style.color = lAt ? 'var(--success)' : '#94a3b8';
+  chipL.querySelector('div:last-child').textContent = lAt ? '✓ ' + lAt.slice(12) : 'Not requested';
+  chipT.style.borderColor = tAt ? '#86efac' : '#e2e8f0';
+  chipT.querySelector('div:last-child').style.color = tAt ? 'var(--success)' : '#94a3b8';
+  chipT.querySelector('div:last-child').textContent = tAt ? '✓ ' + tAt.slice(12) : 'Not requested';
+
+  // Toggle bar icon + subtitle
+  var icon = document.getElementById('hashIcon' + id);
+  var sub  = document.getElementById('hashSubtitle' + id);
+  if (both) {
+    icon.textContent = '✅';
+    sub.textContent = '— ✅ MATCH — Hashes identical'; sub.style.color = 'var(--success)';
+  } else if (otherDone && !myDone) {
+    icon.textContent = '🔔';
+    sub.textContent = '— ' + otherName + ' requested match'; sub.style.color = '#854d0e';
+  } else if (myDone) {
+    icon.textContent = '⏳';
+    sub.textContent = '— Waiting for other party'; sub.style.color = '#64748b';
+  } else {
+    icon.textContent = '🔐';
+    sub.textContent = '— Click to review & request'; sub.style.color = '#64748b';
+  }
+
+  // Actions
+  var act = document.getElementById('hashActions' + id);
+  var confirmUrl = act.dataset.confirmUrl;
+  var resetUrl   = act.dataset.resetUrl;
+  var csrf       = act.dataset.csrf;
+  var html = '';
+  if (!myDone) {
+    html += '<button onclick="hashRequest(' + id + ',\'' + confirmUrl + '\',\'' + csrf + '\')" class="btn btn-primary btn-sm">'
+          + (otherDone ? '✅ Confirm Match' : '🔐 Request Hash Match') + '</button>';
+  }
+  if (myDone || both) {
+    html += '<button onclick="hashRemove(' + id + ',\'' + resetUrl + '\',\'' + csrf + '\')" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#dc2626">✕ Remove</button>';
+  }
+  act.innerHTML = html;
+
+  if (both) _stopPoll(id);
+}
+
+function hashRequest(id, url, csrf) {
+  fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'Content-Type': 'application/json' } })
+    .then(function(){ _pollStatus(id); });
+}
+
+function hashRemove(id, url, csrf) {
+  fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'Content-Type': 'application/json' } })
+    .then(function(){ _pollStatus(id); });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Admin — {{ user.full_name }}{% endblock %}
+{% block page_title %}User Detail{% endblock %}
+{% block content %}
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>{{ user.full_name }}</h1>
+    <p style="color:var(--gray-500)">{{ user.email }} · {{ user.role }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="btn btn-outline">Edit</a>
+    <form method="POST" action="{{ url_for('admin.toggle_active', user_id=user.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn {% if user.is_active %}btn-ghost{% else %}btn-primary{% endif %}">
+        {% if user.is_active %}Deactivate{% else %}Activate{% endif %}
+      </button>
+    </form>
+    {% if user.id != current_user.id %}
+    <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}"
+          onsubmit="return confirm('Permanently delete {{ user.email }}?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn" style="background:var(--danger);color:#fff">Delete User</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem" class="pop-in">
+  <!-- Info -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">Account Info</div></div>
+    <div class="card-body">
+      <div style="display:grid;gap:12px">
+        {% for label, val in [('ID', user.id), ('Full Name', user.full_name), ('Email', user.email), ('Phone', user.phone or '—'), ('Role', user.role), ('Active', 'Yes' if user.is_active else 'No'), ('Joined', user.created_at.strftime('%d %b %Y %H:%M'))] %}
+        <div style="display:flex;gap:8px">
+          <span style="font-size:.75rem;color:var(--gray-500);min-width:90px;padding-top:2px">{{ label }}</span>
+          <span style="font-weight:600;font-size:.875rem">{{ val }}</span>
+        </div>
+        {% endfor %}
+        <div style="display:flex;gap:8px">
+          <span style="font-size:.75rem;color:var(--gray-500);min-width:90px;padding-top:2px">Has RSA Keys</span>
+          <span style="font-weight:600;font-size:.875rem">{% if user.private_key_pem %}Yes{% else %}No{% endif %}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset password -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">Reset Password</div></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.reset_password', user_id=user.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input type="text" name="new_password" class="form-control" placeholder="Min 6 characters" required minlength="6">
+        </div>
+        <button class="btn btn-primary btn-full">Set Password</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Certificate -->
+{% if cert %}
+<div class="card pop-in" style="margin-bottom:1.25rem">
+  <div class="card-header">
+    <div class="card-title">Digital Certificate</div>
+    <span class="badge {% if cert.is_revoked %}badge-danger{% elif cert.is_valid %}badge-success{% else %}badge-warning{% endif %}">
+      {{ cert.status_display }}
+    </span>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:.85rem">
+      <div><span style="color:var(--gray-500)">Serial:</span> <span class="font-mono" style="font-size:11px">{{ cert.serial_number[:32] }}...</span></div>
+      <div><span style="color:var(--gray-500)">Issued:</span> {{ cert.issued_at.strftime('%d %b %Y') }}</div>
+      <div><span style="color:var(--gray-500)">Expires:</span> {{ cert.expires_at.strftime('%d %b %Y') }}</div>
+      <div><span style="color:var(--gray-500)">Revoked:</span> {{ 'Yes — ' + cert.revocation_reason if cert.is_revoked else 'No' }}</div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      {% if not cert.is_revoked %}
+      <form method="POST" action="{{ url_for('admin.revoke_cert', cert_id=cert.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="reason" value="Revoked by admin">
+        <button class="btn btn-sm" style="background:var(--danger);color:#fff">Revoke Certificate</button>
+      </form>
+      {% else %}
+      <form method="POST" action="{{ url_for('admin.restore_cert', cert_id=cert.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline">Restore Certificate</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Assets -->
+{% if assets %}
+<div class="card pop-in" style="margin-bottom:1.25rem">
+  <div class="card-header"><div class="card-title">Assets ({{ assets|length }})</div></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Title</th><th>Category</th><th>Location</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for a in assets %}
+        <tr>
+          <td><strong>{{ a.asset_title }}</strong></td>
+          <td>{{ a.category.name if a.category else '—' }}</td>
+          <td>{{ a.location or '—' }}</td>
+          <td><span class="badge {% if a.status=='available' %}badge-success{% else %}badge-grey{% endif %}">{{ a.status }}</span></td>
+          <td><a href="{{ url_for('admin.edit_asset', asset_id=a.id) }}" class="btn btn-sm btn-ghost">Edit</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent agreements -->
+{% if agreements %}
+<div class="card pop-in" style="margin-bottom:1.25rem">
+  <div class="card-header"><div class="card-title">Agreements (recent 10)</div></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>UID</th><th>Category</th><th>Rent</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for ag in agreements %}
+        <tr>
+          <td class="font-mono" style="font-size:11px">{{ ag.agreement_uid[:14] }}...</td>
+          <td>{{ ag.rental_category or '—' }}</td>
+          <td>{{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}</td>
+          <td><span class="badge badge-grey">{{ ag.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<a href="{{ url_for('admin.users') }}" class="btn btn-ghost">← Back to Users</a>
+{% endblock %}

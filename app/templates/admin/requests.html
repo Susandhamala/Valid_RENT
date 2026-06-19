@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Admin — Requests{% endblock %}
+{% block page_title %}Rental Requests{% endblock %}
+{% block content %}
+
+<div class="page-header pop-in">
+  <div class="page-header-left"><h1>All Requests</h1><p style="color:var(--gray-500)">{{ requests|length }} request(s)</p></div>
+</div>
+
+<form method="GET" style="display:flex;gap:10px;margin-bottom:1.5rem" class="pop-in">
+  <select name="status" class="form-control" style="max-width:220px">
+    <option value="">All Status</option>
+    {% for s in ['pending','under_review','negotiating','approved','rejected','agreement_created'] %}
+    <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-outline">Filter</button>
+  {% if status %}<a href="{{ url_for('admin.requests_list') }}" class="btn btn-ghost">Clear</a>{% endif %}
+</form>
+
+<div class="card pop-in">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>ID</th><th>Category</th><th>Tenant</th><th>Landlord</th><th>Rent</th><th>Status</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td class="font-mono" style="font-size:11px">{{ r.id }}</td>
+          <td>{{ r.rental_category }}</td>
+          <td style="font-size:.85rem">{{ r.tenant.full_name }}</td>
+          <td style="font-size:.85rem">{{ r.landlord.full_name }}</td>
+          <td>{{ r.currency }} {{ '{:,.0f}'.format(r.proposed_rent or 0) }}</td>
+          <td><span class="badge {% if r.status=='pending' %}badge-warning{% elif r.status=='approved' %}badge-success{% elif r.status=='rejected' %}badge-danger{% else %}badge-info{% endif %}">{{ r.status }}</span></td>
+          <td style="font-size:.78rem;color:var(--gray-500)">{{ r.created_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('admin.delete_request', req_id=r.id) }}"
+                  onsubmit="return confirm('Delete this request?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm" style="background:var(--danger);color:#fff">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray-400)">No requests found</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

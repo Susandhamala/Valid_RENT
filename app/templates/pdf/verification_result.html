@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Verification Result{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div style="max-width:780px;margin:40px auto;padding:0 16px">
+
+  <!-- VERDICT BANNER -->
+  <div class="cert-preview pop-in" style="text-align:center;padding:40px 32px">
+    <div class="cert-watermark">ACADEMIC PROTOTYPE – NOT AN OFFICIAL GOVERNMENT DOCUMENT</div>
+    <div style="font-size:13px;color:var(--grey-500);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">
+      Valid Rent — QR Verification Result
+    </div>
+    <div class="verify-result {% if result == 'VALID' %}valid{% else %}invalid{% endif %}">
+      {{ result }}
+    </div>
+    {% if result == 'VALID' %}
+    <div style="font-size:16px;margin-top:12px;color:var(--grey-600)">
+      ✓ Agreement signatures and certificates are authentic
+    </div>
+    {% else %}
+    <div style="font-size:15px;margin-top:12px;color:var(--danger)">
+      ✗ {% if reason %}{{ reason }}{% else %}One or more checks failed{% endif %}
+    </div>
+    {% endif %}
+    {% if code %}
+    <div class="verify-code" style="margin-top:14px;font-size:12px;font-family:monospace;word-break:break-all">
+      Certificate No: {{ code }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- AGREEMENT SUMMARY -->
+  {% if public_info %}
+  <div class="card pop-in pop-in-delay-1" style="margin-top:16px">
+    <div class="card-body">
+      <div class="section-title">Agreement Summary</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        {% for label, val in [
+          ('Agreement ID', public_info.get('agreement_id')),
+          ('Category', public_info.get('rental_category')),
+          ('Status', public_info.get('status','').replace('_',' ').title()),
+          ('Start Date', public_info.get('start_date')),
+          ('End Date', public_info.get('end_date')),
+          ('Landlord', public_info.get('landlord_name')),
+          ('Tenant', public_info.get('tenant_name')),
+        ] %}
+        {% if val %}
+        <div>
+          <div class="text-muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px">{{ label }}</div>
+          <div style="font-weight:600;font-size:13px;font-family:{% if 'id' in label.lower() %}monospace{% else %}inherit{% endif %};word-break:break-all">{{ val }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- SIGNATURE & CERT CHECKS -->
+  {% if checks %}
+  <div class="card pop-in pop-in-delay-2" style="margin-top:16px">
+    <div class="card-body">
+      <div class="section-title">Verification Checks</div>
+      <div style="display:grid;gap:8px">
+        {% for label, val in [
+          ('Landlord RSA-PSS Signature Valid', checks.get('landlord_signed')),
+          ('Tenant RSA-PSS Signature Valid', checks.get('tenant_signed')),
+          ('Landlord X.509 Certificate Valid', checks.get('landlord_cert_valid')),
+          ('Tenant X.509 Certificate Valid', checks.get('tenant_cert_valid')),
+          ('Landlord Certificate Not Revoked', not checks.get('landlord_cert_revoked', True)),
+          ('Tenant Certificate Not Revoked', not checks.get('tenant_cert_revoked', True)),
+        ] %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--grey-100)">
+          <span style="font-size:13px">{{ label }}</span>
+          <span class="badge {% if val %}badge-success{% else %}badge-danger{% endif %}">
+            {% if val %}✓ Pass{% else %}✗ Fail{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- FULL CRYPTOGRAPHIC EVIDENCE -->
+  {% if crypto_evidence %}
+  <div class="card pop-in pop-in-delay-3" style="margin-top:16px">
+    <div class="card-body">
+      <div class="section-title">Complete Cryptographic Evidence</div>
+      <p class="text-muted text-sm" style="margin-bottom:16px">
+        All hashes and signatures below are the complete values — no truncation. These are the exact values used during RSA-PSS verification.
+      </p>
+
+      <!-- Document SHA-256 Hash -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:4px">
+          📄 Document SHA-256 Hash
+        </div>
+        <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">Generated when the agreement text was created. Both parties' signatures were made against this hash.</div>
+        <div class="cert-hash" style="font-size:11px;word-break:break-all;background:var(--grey-50,#f9fafb);padding:10px;border-radius:6px;border:1px solid var(--grey-200)">{{ crypto_evidence.document_hash_sha256 }}</div>
+      </div>
+
+      <!-- PDF SHA-256 Hash -->
+      {% if crypto_evidence.pdf_hash_sha256 %}
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:4px">
+          📑 PDF Certificate SHA-256 Hash
+        </div>
+        <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">Hash of the final generated PDF file. Use this to confirm your downloaded copy has not been altered.</div>
+        <div class="cert-hash" style="font-size:11px;word-break:break-all;background:var(--grey-50,#f9fafb);padding:10px;border-radius:6px;border:1px solid var(--grey-200)">{{ crypto_evidence.pdf_hash_sha256 }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Landlord Signature -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:4px">
+          🏠 Landlord RSA-2048 Signature (Base64)
+        </div>
+        <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">
+          Signed: {{ crypto_evidence.landlord_signed_at }} &nbsp;·&nbsp; Cert Serial: <span style="font-family:monospace">{{ crypto_evidence.landlord_cert_serial }}</span>
+        </div>
+        {% if crypto_evidence.landlord_signature %}
+        <div class="cert-hash" style="font-size:10px;word-break:break-all;background:var(--grey-50,#f9fafb);padding:10px;border-radius:6px;border:1px solid {% if checks.landlord_signed %}#86efac{% else %}#fca5a5{% endif %}">{{ crypto_evidence.landlord_signature }}</div>
+        <div style="margin-top:4px;font-size:11px;font-weight:600;color:{% if checks.landlord_signed %}var(--success){% else %}var(--danger){% endif %}">
+          {% if checks.landlord_signed %}✓ Signature verified against landlord's public key{% else %}✗ Signature verification failed{% endif %}
+        </div>
+        {% else %}
+        <div style="font-size:12px;color:var(--grey-400);font-style:italic">No signature recorded</div>
+        {% endif %}
+      </div>
+
+      <!-- Tenant Signature -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500);margin-bottom:4px">
+          🧑 Tenant RSA-2048 Signature (Base64)
+        </div>
+        <div style="font-size:11px;color:var(--grey-400);margin-bottom:4px">
+          Signed: {{ crypto_evidence.tenant_signed_at }} &nbsp;·&nbsp; Cert Serial: <span style="font-family:monospace">{{ crypto_evidence.tenant_cert_serial }}</span>
+        </div>
+        {% if crypto_evidence.tenant_signature %}
+        <div class="cert-hash" style="font-size:10px;word-break:break-all;background:var(--grey-50,#f9fafb);padding:10px;border-radius:6px;border:1px solid {% if checks.tenant_signed %}#86efac{% else %}#fca5a5{% endif %}">{{ crypto_evidence.tenant_signature }}</div>
+        <div style="margin-top:4px;font-size:11px;font-weight:600;color:{% if checks.tenant_signed %}var(--success){% else %}var(--danger){% endif %}">
+          {% if checks.tenant_signed %}✓ Signature verified against tenant's public key{% else %}✗ Signature verification failed{% endif %}
+        </div>
+        {% else %}
+        <div style="font-size:12px;color:var(--grey-400);font-style:italic">No signature recorded</div>
+        {% endif %}
+      </div>
+
+      <!-- How hashes were compared -->
+      <div style="padding:12px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af">
+        <strong>How this works:</strong> The document hash above was independently re-verified by running
+        <code>rsa_verify(public_key, document_hash, signature)</code> for each party using RSA-PSS / SHA-256.
+        If the signature decrypts to the same hash, the document is authentic and untampered.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="warning-box pop-in pop-in-delay-4" style="margin-top:16px;font-size:11px">
+    <strong>ACADEMIC PROTOTYPE</strong> — This verification system is not affiliated with the Government of Nepal. For educational purposes only.
+  </div>
+</div>
+{% endblock %}

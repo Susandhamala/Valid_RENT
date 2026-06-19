@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}New Agreement{% endblock %}
+{% block page_title %}Create Agreement{% endblock %}
+
+{% block head %}
+<style>
+/* ── Floating instruction panel ─────────────────────── */
+.guide-float {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: 300px;
+  background: var(--black);
+  color: var(--white);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.28);
+  z-index: 999;
+  overflow: hidden;
+  transition: transform .3s cubic-bezier(.4,0,.2,1), opacity .3s;
+}
+.guide-float.hidden { transform: translateY(120%); opacity: 0; pointer-events: none; }
+.guide-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.guide-header-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.guide-close { background: none; border: none; color: rgba(255,255,255,.5); cursor: pointer; font-size: 18px; line-height: 1; padding: 0; }
+.guide-close:hover { color: var(--white); }
+.guide-steps { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.guide-step { display: flex; align-items: flex-start; gap: 10px; }
+.guide-step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.12);
+  font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.guide-step-num.done { background: var(--success); }
+.guide-step-text { font-size: 12px; color: rgba(255,255,255,.8); line-height: 1.4; padding-top: 3px; }
+.guide-toggle {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--black); color: var(--white);
+  border: none; border-radius: 50%; width: 48px; height: 48px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  cursor: pointer; font-size: 20px; z-index: 998;
+  display: none; align-items: center; justify-content: center;
+  transition: transform .2s;
+}
+.guide-toggle:hover { transform: scale(1.08); }
+
+/* ── Field hints ────────────────────────────────────── */
+.field-hint {
+  display: flex; align-items: flex-start; gap: 7px;
+  background: rgba(59,130,246,.08); border-left: 3px solid var(--info);
+  border-radius: 0 8px 8px 0; padding: 8px 12px; margin-top: 6px;
+  font-size: 12px; color: var(--grey-600); line-height: 1.5;
+}
+.field-hint svg { flex-shrink: 0; margin-top: 1px; stroke: var(--info); }
+</style>
+{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- ── Floating instruction panel ───────────────────── -->
+<div class="guide-float hidden" id="guideFloat">
+  <div class="guide-header">
+    <div class="guide-header-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      How to Create an Agreement
+    </div>
+    <button class="guide-close" onclick="dismissGuide()" title="Close">×</button>
+  </div>
+  <div class="guide-steps">
+    <div class="guide-step">
+      <div class="guide-step-num">1</div>
+      <div class="guide-step-text"><strong>Pick a category</strong> — choose the type of rental (house, room, vehicle, etc.)</div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">2</div>
+      <div class="guide-step-text"><strong>Select the tenant</strong> — choose the registered tenant you want to create this agreement with</div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">3</div>
+      <div class="guide-step-text"><strong>Link an asset</strong> — optionally link one of your listed properties</div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">4</div>
+      <div class="guide-step-text"><strong>Set dates &amp; rent</strong> — define the rental period and monthly amount</div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">5</div>
+      <div class="guide-step-text"><strong>Upload document</strong> — attach a PDF/DOC (it will be AES-256 encrypted) or skip to use terms text only</div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">6</div>
+      <div class="guide-step-text"><strong>Submit</strong> — the tenant receives a notification to review and sign digitally</div>
+    </div>
+  </div>
+</div>
+
+<!-- Re-open toggle (shown after panel is dismissed) -->
+<button class="guide-toggle" id="guideToggle" onclick="showGuide()" title="Show instructions">💡</button>
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>New Rental Agreement</h1>
+    <p>As a landlord, you can directly generate a binding agreement for any tenant</p>
+  </div>
+  <a href="{{ url_for('agreement.list_agreements') }}" class="btn btn-outline">← Agreements</a>
+</div>
+
+<!-- STEPS -->
+<div class="steps pop-in pop-in-delay-1">
+  <div class="step active"><div class="step-num">1</div><span>Details</span></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">2</div><span>Upload &amp; Encrypt</span></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">3</div><span>Sign</span></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">4</div><span>Certificate</span></div>
+</div>
+
+<div class="card pop-in pop-in-delay-2" style="max-width:760px">
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('agreement.create_agreement') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <!-- RENTAL CATEGORY -->
+      <div class="form-group">
+        <label class="form-label">Rental Category *</label>
+        <input type="hidden" name="rental_category" id="catInput" value="{{ form_data.get('rental_category','') }}" required>
+        <div class="category-grid">
+          {% for cat in categories %}
+          <div class="category-card {% if form_data.get('rental_category') == cat.name %}selected{% endif %}"
+               data-value="{{ cat.name }}" onclick="selectCategory(this,'catInput')">
+            <div class="cat-icon">
+              {% if cat.icon == 'home' %}🏠{% elif cat.icon == 'door-open' %}🚪{% elif cat.icon == 'building' %}🏢{% elif cat.icon == 'map' %}🗺️{% elif cat.icon == 'car' %}🚗{% elif cat.icon == 'bicycle' %}🛵{% elif cat.icon == 'gear' %}⚙️{% elif cat.icon == 'briefcase' %}💼{% elif cat.icon == 'box' %}📦{% else %}🏷️{% endif %}
+            </div>
+            <div class="cat-name">{{ cat.name }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- TENANT SELECTION -->
+      <div class="form-group">
+        <label class="form-label">Select Tenant *</label>
+        <div class="field-hint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Choose the tenant this agreement is for. They will be notified to log in and digitally sign.
+        </div>
+        <select name="tenant_id" class="form-control" required style="margin-top:8px">
+          <option value="">— Select a tenant —</option>
+          {% for t in tenants %}
+          <option value="{{ t.id }}" {% if form_data.get('tenant_id')|string == t.id|string %}selected{% endif %}>
+            {{ t.full_name }} ({{ t.email }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- ASSET SELECTION -->
+      {% if assets %}
+      <div class="form-group">
+        <label class="form-label">Link to Asset (optional)</label>
+        <select name="asset_id" class="form-control">
+          <option value="">— No specific asset —</option>
+          {% for a in assets %}
+          <option value="{{ a.id }}" {% if form_data.get('asset_id')|string == a.id|string %}selected{% endif %}>
+            {{ a.asset_title }} ({{ a.category.name if a.category else 'N/A' }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <!-- DATES & AMOUNT -->
+      <div class="field-hint" style="margin-bottom:16px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Set the rental period. The end date must be after the start date.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" name="start_date" class="form-control" value="{{ form_data.get('start_date','') }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="date" name="end_date" class="form-control" value="{{ form_data.get('end_date','') }}">
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Monthly Rent Amount</label>
+          <input type="number" name="rent_amount" class="form-control" placeholder="0"
+                 min="0" step="100" value="{{ form_data.get('rent_amount','') }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currency</label>
+          <select name="currency" class="form-control">
+            <option value="NPR" {% if form_data.get('currency','NPR')=='NPR' %}selected{% endif %}>NPR – Nepalese Rupee</option>
+            <option value="USD" {% if form_data.get('currency')=='USD' %}selected{% endif %}>USD – US Dollar</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Terms &amp; Conditions</label>
+        <textarea name="terms" class="form-control" rows="3" placeholder="Additional terms...">{{ form_data.get('terms','') }}</textarea>
+      </div>
+
+      <!-- FILE UPLOAD -->
+      <div class="form-group">
+        <label class="form-label">Upload Agreement Document <span class="text-muted" style="font-weight:400;font-size:12px">(optional)</span></label>
+        <div style="border:2px dashed var(--grey-300);border-radius:var(--radius);padding:28px;text-align:center;cursor:pointer;transition:border-color .2s"
+             onclick="document.getElementById('agreementFile').click()"
+             ondragover="event.preventDefault();this.style.borderColor='var(--black)'"
+             ondragleave="this.style.borderColor='var(--grey-300)'"
+             ondrop="handleDrop(event)">
+          <div style="font-size:28px;margin-bottom:8px">📄</div>
+          <div style="font-weight:600" id="fileLabel">Click to upload or drag &amp; drop</div>
+          <div class="text-muted text-sm">PDF, DOC, DOCX, TXT — Max 16MB &mdash; skip to use terms text only</div>
+          <input type="file" name="agreement_file" id="agreementFile" accept=".pdf,.doc,.docx,.txt"
+                 style="display:none" onchange="updateFileLabel(this)">
+        </div>
+        <div class="form-hint">If uploaded, the file is encrypted with AES-256-GCM and a readable copy is shared with the tenant. If skipped, the SHA-256 hash is computed from the agreement terms.</div>
+      </div>
+
+      <div class="info-box" style="margin-bottom:20px">
+        <strong>Security Notice:</strong> Your agreement will be encrypted using AES-256-GCM. A SHA-256 hash is computed for tamper detection. Both parties must sign digitally using their RSA-2048 private keys.
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <a href="{{ url_for('agreement.list_agreements') }}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-lg">Create &amp; Encrypt Agreement</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function updateFileLabel(input) {
+  document.getElementById('fileLabel').textContent = input.files[0]?.name || 'Click to upload or drag & drop';
+}
+function handleDrop(event) {
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (file) {
+    const input = document.getElementById('agreementFile');
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    document.getElementById('fileLabel').textContent = file.name;
+  }
+}
+
+// ── Floating guide panel ──────────────────────────────
+function dismissGuide() {
+  document.getElementById('guideFloat').classList.add('hidden');
+  document.getElementById('guideToggle').style.display = 'flex';
+}
+function showGuide() {
+  document.getElementById('guideFloat').classList.remove('hidden');
+  document.getElementById('guideToggle').style.display = 'none';
+}
+
+// Auto-show after short delay so user sees it appear
+setTimeout(function () {
+  document.getElementById('guideFloat').classList.remove('hidden');
+}, 400);
+</script>
+{% endblock %}

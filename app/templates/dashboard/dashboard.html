@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- ── HEADER ───────────────────────────────────────────────────────────── -->
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Hello, {{ current_user.full_name.split()[0] }} 👋</h1>
+    <p>
+      {% if current_user.has_role('landlord') and current_user.has_role('tenant') %}
+        Landlord &amp; Tenant account
+      {% elif current_user.has_role('landlord') %}
+        Landlord account
+      {% else %}
+        Tenant account
+      {% endif %}
+      &mdash; ValidRent Secure Platform
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if current_user.has_role('landlord') %}
+    <a href="{{ url_for('asset.create_asset') }}" class="btn btn-outline">+ New Listing</a>
+    <a href="{{ url_for('agreement.create_agreement') }}" class="btn btn-primary">+ New Agreement</a>
+    {% endif %}
+    {% if current_user.has_role('tenant') %}
+    <a href="{{ url_for('asset.browse') }}" class="btn btn-primary">🔍 Browse Properties</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── PENDING REQUESTS ALERT ────────────────────────────────────────────── -->
+{% if pending_requests %}
+<div style="background:var(--black);color:var(--white);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px" class="pop-in">
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div style="font-size:24px;flex-shrink:0">📋</div>
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:15px">{{ pending_requests|length }} rental request{{ 's' if pending_requests|length != 1 }} awaiting your review</div>
+      <div style="font-size:12px;opacity:.75;margin-top:4px">
+        {% for r in pending_requests %}
+          <span style="background:rgba(255,255,255,.15);padding:2px 8px;border-radius:4px;margin:2px 3px 2px 0;display:inline-block">
+            {{ r.tenant.full_name }} → {{ r.asset.asset_title if r.asset else r.rental_category }}
+          </span>
+        {% endfor %}
+      </div>
+    </div>
+    <a href="{{ url_for('req.list_requests') }}" class="btn btn-sm" style="background:var(--white);color:var(--black);flex-shrink:0">Review Now →</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── TENANT: DIRECT AGREEMENT ALERT ───────────────────────────────────── -->
+{% if pending_direct_agreements %}
+<div style="background:#92400e;color:#fff;border-radius:var(--radius);padding:16px 20px;margin-bottom:16px" class="pop-in">
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div style="font-size:24px;flex-shrink:0">📨</div>
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:15px">{{ pending_direct_agreements|length }} agreement{{ 's' if pending_direct_agreements|length != 1 }} sent to you for review</div>
+      <div style="font-size:12px;opacity:.8;margin-top:4px">
+        {% for r in pending_direct_agreements %}
+          <span style="background:rgba(255,255,255,.15);padding:2px 8px;border-radius:4px;margin:2px 3px 2px 0;display:inline-block">
+            From {{ r.landlord.full_name }}{% if r.asset %}: {{ r.asset.asset_title }}{% endif %}
+          </span>
+        {% endfor %}
+      </div>
+    </div>
+    <a href="{{ url_for('req.list_requests') }}" class="btn btn-sm" style="background:var(--white);color:#92400e;flex-shrink:0">Respond Now →</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── STATS ─────────────────────────────────────────────────────────────── -->
+<div class="stats-grid pop-in pop-in-delay-1">
+  <div class="stat-card dark">
+    <div class="stat-number">{{ total_agreements }}</div>
+    <div class="stat-label">Total Agreements</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ verified }}</div>
+    <div class="stat-label">Fully Signed</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ pending }}</div>
+    <div class="stat-label">Awaiting Signatures</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+  </div>
+  {% if current_user.has_role('landlord') %}
+  <div class="stat-card">
+    <div class="stat-number">{{ total_assets }}</div>
+    <div class="stat-label">My Listings</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+  </div>
+  <div class="stat-card" style="{% if pending_requests %}border:2px solid var(--danger){% endif %}">
+    <div class="stat-number">{{ pending_requests|length }}</div>
+    <div class="stat-label">New Requests</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+  </div>
+  {% elif current_user.has_role('tenant') %}
+  <div class="stat-card">
+    <div class="stat-number">{{ active_rentals|length }}</div>
+    <div class="stat-label">Active Rentals</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ my_requests|length }}</div>
+    <div class="stat-label">My Requests</div>
+    <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── CERTIFICATE ────────────────────────────────────────────────────────── -->
+{% if cert %}
+<div class="card pop-in pop-in-delay-2 mb-6">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Your Digital Certificate</div>
+      <div class="card-subtitle">RSA-2048 X.509 — Required for signing agreements</div>
+    </div>
+    {% if cert.is_valid %}
+    <span class="badge badge-success">Valid</span>
+    {% elif cert.is_revoked %}
+    <span class="badge badge-danger">Revoked</span>
+    {% else %}
+    <span class="badge badge-warning">Expired</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="grid-2" style="gap:12px">
+      <div>
+        <div class="text-muted text-sm">Serial Number</div>
+        <div class="font-mono" style="font-size:12px">{{ cert.serial_number[:32] }}…</div>
+      </div>
+      <div>
+        <div class="text-muted text-sm">Expires</div>
+        <div style="font-weight:600">{{ cert.expires_at.strftime('%d %b %Y') }}</div>
+      </div>
+      <div>
+        <div class="text-muted text-sm">Issued</div>
+        <div>{{ cert.issued_at.strftime('%d %b %Y') }}</div>
+      </div>
+      <div>
+        <div class="text-muted text-sm">Subject</div>
+        <div>{{ cert.subject_cn }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-warning pop-in mb-6">
+  No digital certificate found. You need a valid certificate to sign agreements.
+</div>
+{% endif %}
+
+<!-- ── TENANT: PROPERTIES I'M CURRENTLY RENTING ──────────────────────────── -->
+{% if current_user.has_role('tenant') and active_rentals %}
+<div class="card pop-in pop-in-delay-3 mb-6">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Properties I'm Currently Renting</div>
+      <div class="card-subtitle">Fully signed active rental agreements</div>
+    </div>
+    <a href="{{ url_for('agreement.list_agreements') }}" class="btn btn-sm btn-outline">View All</a>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    {% for ag in active_rentals %}
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:16px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+      <div style="width:44px;height:44px;border-radius:50%;background:var(--black);color:var(--white);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;flex-shrink:0">
+        {{ ag.landlord.full_name[0].upper() }}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:15px">
+          {{ ag.asset.asset_title if ag.asset else ag.rental_category }}
+        </div>
+        <div class="text-muted text-sm" style="margin-top:2px">
+          <strong>Landlord:</strong> {{ ag.landlord.full_name }}
+          {% if ag.landlord.phone %} &bull; {{ ag.landlord.phone }}{% endif %}
+          &bull; {{ ag.landlord.email }}
+        </div>
+        {% if ag.asset and ag.asset.location %}
+        <div class="text-muted text-sm">📍 {{ ag.asset.location }}</div>
+        {% endif %}
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">
+          <span style="font-size:13px;font-weight:600;color:var(--black)">
+            {{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}/mo
+          </span>
+          {% if ag.start_date and ag.end_date %}
+          <span class="text-muted text-sm">{{ ag.start_date.strftime('%d %b %Y') }} → {{ ag.end_date.strftime('%d %b %Y') }}</span>
+          {% endif %}
+          <span class="badge badge-success" style="font-size:11px">✓ Fully Signed</span>
+        </div>
+        {% if ag.landlord_signature and ag.tenant_signature %}
+        <div style="font-size:11px;color:var(--grey-500);margin-top:4px">
+          Landlord signed {{ ag.landlord_signed_at.strftime('%d %b %Y') if ag.landlord_signed_at else '—' }} &bull;
+          You signed {{ ag.tenant_signed_at.strftime('%d %b %Y') if ag.tenant_signed_at else '—' }}
+        </div>
+        {% endif %}
+      </div>
+      <a href="{{ url_for('agreement.view_agreement', agreement_id=ag.id) }}" class="btn btn-sm btn-outline" style="flex-shrink:0">View →</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── LANDLORD: RENTED PROPERTIES (who is renting them) ─────────────────── -->
+{% if current_user.has_role('landlord') and rented_assets %}
+<div class="card pop-in pop-in-delay-3 mb-6">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Properties Currently Rented Out</div>
+      <div class="card-subtitle">Your listings with active tenants</div>
+    </div>
+    <a href="{{ url_for('asset.list_assets') }}" class="btn btn-sm btn-outline">View All Assets</a>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    {% for row in rented_assets %}
+    {% set asset = row.asset %}
+    {% set ag = row.agreement %}
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:16px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+      <div style="width:44px;height:44px;border-radius:8px;background:var(--grey-100);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">
+        🏠
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:15px">{{ asset.asset_title }}</div>
+        {% if asset.location %}
+        <div class="text-muted text-sm">📍 {{ asset.location }}</div>
+        {% endif %}
+        {% if ag and ag.tenant %}
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--grey-200);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0">
+            {{ ag.tenant.full_name[0].upper() }}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:13px">Tenant: {{ ag.tenant.full_name }}</div>
+            <div class="text-muted text-sm">{{ ag.tenant.email }}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">
+          <span style="font-size:13px;font-weight:600">{{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}/mo</span>
+          {% if ag.start_date and ag.end_date %}
+          <span class="text-muted text-sm">{{ ag.start_date.strftime('%d %b %Y') }} → {{ ag.end_date.strftime('%d %b %Y') }}</span>
+          {% endif %}
+          <span class="badge badge-success" style="font-size:11px">✓ Active</span>
+        </div>
+        {% else %}
+        <div class="text-muted text-sm" style="margin-top:4px">Tenant info not available</div>
+        {% endif %}
+      </div>
+      {% if ag %}
+      <a href="{{ url_for('agreement.view_agreement', agreement_id=ag.id) }}" class="btn btn-sm btn-outline" style="flex-shrink:0">Agreement →</a>
+      {% else %}
+      <a href="{{ url_for('asset.view_asset', asset_id=asset.id) }}" class="btn btn-sm btn-ghost" style="flex-shrink:0">Asset →</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── RECENT AGREEMENTS ──────────────────────────────────────────────────── -->
+<div class="card pop-in pop-in-delay-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Recent Agreements</div>
+      <div class="card-subtitle">All agreements you are part of, with full party details</div>
+    </div>
+    <a href="{{ url_for('agreement.list_agreements') }}" class="btn btn-sm btn-outline">View All</a>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    {% if agreements %}
+    <div style="display:flex;flex-direction:column">
+      {% for ag in agreements %}
+      {% set is_landlord = current_user.id == ag.landlord_id %}
+      <div style="display:flex;align-items:flex-start;gap:16px;padding:14px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+        <!-- Role badge -->
+        <div style="flex-shrink:0;padding-top:2px">
+          {% if is_landlord %}
+          <span style="background:#e8f4e8;color:#166534;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;letter-spacing:.3px">LANDLORD</span>
+          {% else %}
+          <span style="background:#eff6ff;color:#1e40af;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;letter-spacing:.3px">TENANT</span>
+          {% endif %}
+        </div>
+        <!-- Details -->
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px">
+            {{ ag.asset.asset_title if ag.asset else ag.rental_category or 'Agreement' }}
+          </div>
+          <div style="font-size:12px;color:var(--grey-500);margin-top:2px">
+            <span style="color:var(--grey-700)">Landlord:</span> <strong>{{ ag.landlord.full_name }}</strong>
+            &rarr;
+            <span style="color:var(--grey-700)">Tenant:</span> <strong>{{ ag.tenant.full_name if ag.tenant else '—' }}</strong>
+          </div>
+          {% if ag.asset and ag.asset.location %}
+          <div class="text-muted text-sm">📍 {{ ag.asset.location }}</div>
+          {% endif %}
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;align-items:center">
+            <span style="font-size:13px;font-weight:600">{{ ag.currency }} {{ '{:,.0f}'.format(ag.rent_amount or 0) }}/mo</span>
+            {% if ag.start_date %}
+            <span class="text-muted text-sm">{{ ag.start_date.strftime('%d %b %Y') }}{% if ag.end_date %} → {{ ag.end_date.strftime('%d %b %Y') }}{% endif %}</span>
+            {% endif %}
+            <!-- Signature status -->
+            <span style="font-size:11px">
+              {% if ag.landlord_signature %}<span style="color:#16a34a">✓ L-signed</span>{% else %}<span style="color:#d97706">○ Landlord</span>{% endif %}
+              &nbsp;
+              {% if ag.tenant_signature %}<span style="color:#16a34a">✓ T-signed</span>{% else %}<span style="color:#d97706">○ Tenant</span>{% endif %}
+            </span>
+          </div>
+        </div>
+        <!-- Status + action -->
+        <div style="flex-shrink:0;text-align:right">
+          {% if ag.status in ('fully_signed','verified') %}
+          <span class="badge badge-success" style="font-size:11px">✓ Signed</span>
+          {% elif ag.status == 'landlord_signed' %}
+          <span class="badge badge-info" style="font-size:11px">L Signed</span>
+          {% elif ag.status in ('pending_tenant','pending_signatures') %}
+          <span class="badge badge-warning" style="font-size:11px">Pending</span>
+          {% elif ag.status == 'cancelled' %}
+          <span class="badge badge-danger" style="font-size:11px">Cancelled</span>
+          {% else %}
+          <span class="badge badge-grey" style="font-size:11px">{{ ag.status.replace('_',' ').title() }}</span>
+          {% endif %}
+          <div style="margin-top:6px">
+            <a href="{{ url_for('agreement.view_agreement', agreement_id=ag.id) }}" class="btn btn-sm btn-ghost">View →</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center" style="padding:40px 0;color:var(--grey-400)">
+      <div style="font-size:40px;margin-bottom:12px">📄</div>
+      <div style="font-weight:600;margin-bottom:6px">No agreements yet</div>
+      <div class="text-muted text-sm">
+        {% if current_user.has_role('landlord') %}
+        <a href="{{ url_for('agreement.create_agreement') }}" style="color:var(--black)">Create your first agreement →</a>
+        {% else %}
+        Browse properties and send a rental request to get started.
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── LANDLORD: MY LISTINGS ──────────────────────────────────────────────── -->
+{% if current_user.has_role('landlord') and assets %}
+<div class="card mt-6 pop-in pop-in-delay-4">
+  <div class="card-header">
+    <div>
+      <div class="card-title">My Listings</div>
+      <div class="card-subtitle">Properties you have listed for rent</div>
+    </div>
+    <a href="{{ url_for('asset.list_assets') }}" class="btn btn-sm btn-outline">View All</a>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    {% for a in assets %}
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+      <div style="font-size:24px;flex-shrink:0">
+        {% if a.category %}
+          {% set ic = a.category.icon %}
+          {% if ic == 'home' %}🏠{% elif ic == 'door-open' %}🚪{% elif ic == 'building' %}🏢{% elif ic == 'map' %}🗺️{% elif ic == 'car' %}🚗{% elif ic == 'bicycle' %}🛵{% elif ic == 'gear' %}⚙️{% elif ic == 'briefcase' %}💼{% elif ic == 'box' %}📦{% else %}🏷️{% endif %}
+        {% else %}🏷️{% endif %}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px">{{ a.asset_title }}</div>
+        <div class="text-muted text-sm">
+          {{ a.category.name if a.category else '—' }}
+          {% if a.location %} &bull; 📍 {{ a.location }}{% endif %}
+          {% if a.rent_amount %} &bull; {{ a.currency or 'NPR' }} {{ '{:,.0f}'.format(a.rent_amount) }}/mo{% endif %}
+        </div>
+      </div>
+      <div style="flex-shrink:0;text-align:right">
+        {% if a.status == 'available' %}<span class="badge badge-success">Available</span>
+        {% elif a.status == 'rented' %}<span class="badge badge-info">Rented</span>
+        {% else %}<span class="badge badge-grey">{{ a.status.title() }}</span>{% endif %}
+        <div style="margin-top:4px">
+          <a href="{{ url_for('asset.view_asset', asset_id=a.id) }}" class="btn btn-sm btn-ghost">View →</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── TENANT: RECENT REQUESTS ────────────────────────────────────────────── -->
+{% if current_user.has_role('tenant') and my_requests %}
+<div class="card mt-6 pop-in pop-in-delay-4">
+  <div class="card-header">
+    <div>
+      <div class="card-title">My Recent Requests</div>
+      <div class="card-subtitle">Rental requests you have submitted</div>
+    </div>
+    <a href="{{ url_for('req.list_requests') }}" class="btn btn-sm btn-outline">View All</a>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    {% for r in my_requests %}
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--grey-100){% endif %}">
+      <div style="font-size:22px;flex-shrink:0">📋</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px">
+          {{ r.asset.asset_title if r.asset else r.rental_category }}
+        </div>
+        <div class="text-muted text-sm">
+          Landlord: <strong>{{ r.landlord.full_name }}</strong>
+          {% if r.proposed_rent %} &bull; {{ r.currency }} {{ '{:,.0f}'.format(r.proposed_rent) }}/mo{% endif %}
+        </div>
+        <div class="text-muted text-sm">{{ r.created_at.strftime('%d %b %Y') }}</div>
+      </div>
+      <div style="flex-shrink:0;text-align:right">
+        {% set sc = {'pending':'badge-warning','under_review':'badge-info','negotiating':'badge-info','approved':'badge-success','rejected':'badge-danger','agreement_created':'badge-black'} %}
+        <span class="badge {{ sc.get(r.status,'badge-grey') }}" style="font-size:11px">{{ r.status_label }}</span>
+        <div style="margin-top:4px">
+          <a href="{{ url_for('req.view_request', req_id=r.id) }}" class="btn btn-sm btn-ghost">View →</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

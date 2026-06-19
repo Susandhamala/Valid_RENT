@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>My Profile</h1>
+    <p>Update your name, phone number and password</p>
+  </div>
+</div>
+
+<div style="max-width:580px;margin:0 auto;display:flex;flex-direction:column;gap:20px">
+
+  <!-- Profile summary card -->
+  <div class="card pop-in">
+    <div style="padding:24px;display:flex;align-items:center;gap:18px">
+      <div style="width:68px;height:68px;border-radius:50%;background:var(--black);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:var(--white);flex-shrink:0">
+        {{ current_user.full_name[0].upper() }}
+      </div>
+      <div>
+        <div style="font-size:19px;font-weight:700;letter-spacing:-0.3px">{{ current_user.full_name }}</div>
+        <div style="font-size:13px;color:var(--grey-500);margin-top:2px">{{ current_user.email }}</div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          {% for r in current_user.all_roles %}
+          <span style="padding:2px 12px;border-radius:20px;font-size:11px;font-weight:700;background:var(--grey-200);color:var(--grey-700)">{{ r | capitalize }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit profile form -->
+  <div class="card pop-in">
+    <div style="padding:24px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:20px">Edit Profile</h3>
+
+      <form method="POST" action="{{ url_for('dashboard.settings') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control"
+                 value="{{ current_user.full_name }}" required
+                 placeholder="Your full name">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" class="form-control"
+                 value="{{ current_user.email }}" disabled
+                 style="opacity:0.55;cursor:not-allowed;background:var(--grey-100)">
+          <div style="font-size:12px;color:var(--grey-500);margin-top:4px">Email cannot be changed</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Phone Number</label>
+          <input type="tel" name="phone" class="form-control"
+                 value="{{ current_user.phone or '' }}"
+                 placeholder="e.g. 98XXXXXXXX">
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--grey-200);margin:24px 0">
+
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:6px">Change Password</h3>
+        <p style="font-size:13px;color:var(--grey-500);margin-bottom:20px">Leave blank to keep your current password.</p>
+
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input type="password" name="new_password" id="newPassword" class="form-control"
+                 placeholder="Min 8 characters" autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Confirm New Password</label>
+          <input type="password" name="confirm_password" id="confirmPassword" class="form-control"
+                 placeholder="Repeat new password" autocomplete="new-password">
+          <div id="pwMatch" style="font-size:12px;margin-top:4px;display:none"></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:4px">Save Changes</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Account info -->
+  <div class="card pop-in">
+    <div style="padding:24px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px">Account Info</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:var(--grey-100);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--grey-500);margin-bottom:4px">Member Since</div>
+          <div style="font-size:14px;font-weight:600">{{ current_user.created_at.strftime('%d %b %Y') }}</div>
+        </div>
+        <div style="background:var(--grey-100);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--grey-500);margin-bottom:4px">Role</div>
+          <div style="font-size:14px;font-weight:600">{{ current_user.all_roles | map('capitalize') | join(' & ') }}</div>
+        </div>
+        <div style="background:var(--grey-100);border-radius:10px;padding:14px;grid-column:1/-1">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--grey-500);margin-bottom:4px">PKI Certificate</div>
+          <a href="{{ url_for('verification.crypto_info') }}" class="btn btn-outline btn-sm" style="margin-top:4px">View Cryptography Info</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const np  = document.getElementById('newPassword');
+  const cp  = document.getElementById('confirmPassword');
+  const msg = document.getElementById('pwMatch');
+
+  function check() {
+    if (!cp.value) { msg.style.display = 'none'; return; }
+    const ok = np.value === cp.value;
+    msg.textContent  = ok ? 'Passwords match' : 'Passwords do not match';
+    msg.style.color  = ok ? 'var(--success)' : 'var(--danger)';
+    msg.style.display = 'block';
+  }
+
+  np.addEventListener('input', check);
+  cp.addEventListener('input', check);
+})();
+</script>
+{% endblock %}

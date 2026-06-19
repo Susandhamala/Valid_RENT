@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}PDF Certificate{% endblock %}
+{% block page_title %}Verification Certificate{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Verification Certificate</h1>
+    <p>Official-style PDF — Academic Prototype Only</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('agreement.view_agreement', agreement_id=agreement.id) }}" class="btn btn-outline">← Agreement</a>
+    {% if gen_pdf %}
+    <a href="{{ url_for('pdf.download_pdf', agreement_id=agreement.id) }}" class="btn btn-primary">⬇ Download My Copy</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- DISCLAIMER -->
+<div class="warning-box pop-in pop-in-delay-1" style="margin-bottom:20px">
+  <strong>ACADEMIC PROTOTYPE – NOT AN OFFICIAL GOVERNMENT DOCUMENT</strong><br>
+  Not affiliated with the Government of Nepal. For educational purposes only.
+</div>
+
+<!-- PHOTO STATUS PANEL -->
+<div class="card pop-in pop-in-delay-2" style="margin-bottom:20px">
+  <div class="card-body">
+    <div class="section-title">Identity Photos — Both Parties</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- Landlord photo -->
+      <div style="text-align:center;padding:20px;border:1.5px solid {% if landlord_photo %}var(--success){% else %}var(--grey-200){% endif %};border-radius:var(--radius)">
+        {% if landlord_photo and landlord_photo.photo_encrypted_path %}
+          <div style="font-size:32px;margin-bottom:8px">📸</div>
+          <div style="font-weight:700;color:var(--success)">✓ Landlord Photo Captured</div>
+          <div class="text-muted text-sm">{{ landlord_photo.captured_at.strftime('%d %b %Y %H:%M') }}</div>
+        {% else %}
+          <div style="font-size:32px;margin-bottom:8px;opacity:.3">👤</div>
+          <div style="font-weight:600;color:var(--grey-400)">Landlord Photo Missing</div>
+          <div class="text-muted text-sm">{% if current_user.id == agreement.landlord_id %}
+            <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" style="color:var(--black)">Capture now</a>
+          {% else %}Landlord has not captured yet{% endif %}</div>
+        {% endif %}
+        <div style="margin-top:8px;font-size:12px;font-weight:700;background:var(--grey-100);padding:4px 10px;border-radius:100px;display:inline-block">
+          {{ agreement.landlord.full_name }}
+        </div>
+      </div>
+
+      <!-- Tenant photo -->
+      <div style="text-align:center;padding:20px;border:1.5px solid {% if tenant_photo %}var(--success){% else %}var(--grey-200){% endif %};border-radius:var(--radius)">
+        {% if tenant_photo and tenant_photo.photo_encrypted_path %}
+          <div style="font-size:32px;margin-bottom:8px">📸</div>
+          <div style="font-weight:700;color:var(--success)">✓ Tenant Photo Captured</div>
+          <div class="text-muted text-sm">{{ tenant_photo.captured_at.strftime('%d %b %Y %H:%M') }}</div>
+        {% else %}
+          <div style="font-size:32px;margin-bottom:8px;opacity:.3">👤</div>
+          <div style="font-weight:600;color:var(--grey-400)">Tenant Photo Missing</div>
+          <div class="text-muted text-sm">{% if current_user.id == agreement.tenant_id %}
+            <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" style="color:var(--black)">Capture now</a>
+          {% else %}Tenant has not captured yet{% endif %}</div>
+        {% endif %}
+        <div style="margin-top:8px;font-size:12px;font-weight:700;background:var(--grey-100);padding:4px 10px;border-radius:100px;display:inline-block">
+          {{ agreement.tenant.full_name if agreement.tenant else 'N/A' }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not gen_pdf %}
+<!-- GENERATE PROMPT -->
+<div class="card pop-in pop-in-delay-3" style="max-width:560px;margin:0 auto">
+  <div class="card-body text-center" style="padding:48px 32px">
+    <div style="font-size:56px;margin-bottom:16px">📜</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:8px">Generate PDF Certificate</div>
+    <div class="text-muted" style="margin-bottom:28px;font-size:14px;line-height:1.7">
+      The agreement has been fully signed by both parties.<br>
+      Generate the official-style certificate PDF with both photos, QR code, and cryptographic details.<br>
+      <strong>Both the landlord and tenant can download their own copy.</strong>
+    </div>
+    <form method="POST" action="{{ url_for('pdf.generate_pdf', agreement_id=agreement.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary btn-lg">🔐 Generate Certificate PDF</button>
+    </form>
+  </div>
+</div>
+
+{% else %}
+<!-- ── CERTIFICATE PREVIEW ───────────────────────────────────── -->
+<div class="cert-preview pop-in pop-in-delay-3">
+  <div class="cert-watermark">ACADEMIC PROTOTYPE – NOT AN OFFICIAL GOVERNMENT DOCUMENT</div>
+
+  <div class="cert-header">
+    <div class="cert-seal">⬡ VALID RENT DEMO SEAL ⬡</div>
+    <div class="cert-title">Valid Rent Secure Rental Verification Certificate</div>
+    <div class="cert-subtitle">Academic Prototype &mdash; Valid Rent Platform &mdash; Nepal</div>
+    <div style="font-size:10px;color:var(--danger);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.5px">
+      Academic Prototype — Not an Official Government Document
+    </div>
+  </div>
+
+  <div class="cert-body">
+
+    <div class="cert-row">
+      <div class="cert-field">
+        <label>Certificate No.</label>
+        <span class="font-mono" style="font-size:11px">{{ gen_pdf.verification_code[:24] }}...</span>
+      </div>
+      <div class="cert-field">
+        <label>Generated</label>
+        <span>{{ gen_pdf.generated_at.strftime('%d %b %Y %H:%M UTC') }}</span>
+      </div>
+    </div>
+
+    <div class="cert-row">
+      <div class="cert-field">
+        <label>Agreement ID</label>
+        <span class="font-mono" style="font-size:11px">{{ agreement.agreement_uid[:24] }}...</span>
+      </div>
+      <div class="cert-field">
+        <label>Rental Category</label>
+        <span>{{ agreement.rental_category or 'N/A' }}</span>
+      </div>
+    </div>
+
+    {% if agreement.asset %}
+    <div class="cert-row">
+      <div class="cert-field">
+        <label>Asset</label>
+        <span>{{ agreement.asset.asset_title }}</span>
+      </div>
+      <div class="cert-field">
+        <label>Location</label>
+        <span>{{ agreement.asset.location or 'N/A' }}</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="cert-row">
+      <div class="cert-field">
+        <label>Monthly Rent</label>
+        <span style="font-weight:800;font-size:18px">{{ agreement.currency }} {{ '{:,.0f}'.format(agreement.rent_amount or 0) }}</span>
+      </div>
+      <div class="cert-field">
+        <label>Period</label>
+        <span>{{ agreement.start_date or 'N/A' }} → {{ agreement.end_date or 'N/A' }}</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PARTIES WITH PHOTOS -->
+    <div class="section-title" style="margin-bottom:14px">Parties to the Agreement</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+
+      <!-- Landlord -->
+      <div style="border:1px solid var(--grey-200);border-radius:var(--radius);overflow:hidden">
+        <div style="background:var(--black);color:var(--white);padding:8px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px">Landlord</div>
+        <div style="padding:14px">
+          {% if landlord_photo and landlord_photo.photo_encrypted_path %}
+          <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;border:2px solid var(--grey-200);margin-bottom:10px">
+            <img src="{{ url_for('photo.serve_photo', photo_id=landlord_photo.id) }}"
+                 style="width:100%;height:100%;object-fit:cover" alt="Landlord photo"
+                 onerror="this.parentElement.innerHTML='<div style=\'font-size:28px;display:flex;align-items:center;justify-content:center;height:100%;background:var(--grey-100)\'>👤</div>'">
+          </div>
+          {% else %}
+          <div style="width:72px;height:72px;border-radius:50%;background:var(--grey-100);display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:10px">👤</div>
+          {% endif %}
+          <div style="font-weight:700">{{ agreement.landlord.full_name }}</div>
+          <div class="text-muted text-sm">{{ agreement.landlord.email }}</div>
+          {% if landlord_cert %}
+          <div style="margin-top:6px"><span class="badge badge-{% if landlord_cert.is_valid %}success{% else %}danger{% endif %}" style="font-size:10px">Cert: {{ landlord_cert.status_display }}</span></div>
+          {% endif %}
+          <div style="margin-top:6px">
+            <span class="badge {% if agreement.landlord_signature %}badge-success{% else %}badge-danger{% endif %}" style="font-size:10px">
+              {% if agreement.landlord_signature %}✓ Signed{% else %}✗ Not Signed{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tenant -->
+      <div style="border:1px solid var(--grey-200);border-radius:var(--radius);overflow:hidden">
+        <div style="background:var(--grey-700);color:var(--white);padding:8px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px">Tenant</div>
+        <div style="padding:14px">
+          {% if tenant_photo and tenant_photo.photo_encrypted_path %}
+          <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;border:2px solid var(--grey-200);margin-bottom:10px">
+            <img src="{{ url_for('photo.serve_photo', photo_id=tenant_photo.id) }}"
+                 style="width:100%;height:100%;object-fit:cover" alt="Tenant photo"
+                 onerror="this.parentElement.innerHTML='<div style=\'font-size:28px;display:flex;align-items:center;justify-content:center;height:100%;background:var(--grey-100)\'>👤</div>'">
+          </div>
+          {% else %}
+          <div style="width:72px;height:72px;border-radius:50%;background:var(--grey-100);display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:10px">👤</div>
+          {% endif %}
+          <div style="font-weight:700">{{ agreement.tenant.full_name if agreement.tenant else 'N/A' }}</div>
+          <div class="text-muted text-sm">{{ agreement.tenant.email if agreement.tenant else '' }}</div>
+          {% if tenant_cert %}
+          <div style="margin-top:6px"><span class="badge badge-{% if tenant_cert.is_valid %}success{% else %}danger{% endif %}" style="font-size:10px">Cert: {{ tenant_cert.status_display }}</span></div>
+          {% endif %}
+          <div style="margin-top:6px">
+            <span class="badge {% if agreement.tenant_signature %}badge-success{% else %}badge-danger{% endif %}" style="font-size:10px">
+              {% if agreement.tenant_signature %}✓ Signed{% else %}✗ Not Signed{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- CRYPTO INTEGRITY -->
+    <div class="section-title" style="margin-bottom:10px">Cryptographic Integrity</div>
+    <div style="display:grid;gap:10px;margin-bottom:20px">
+      <div>
+        <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--grey-500)">Document SHA-256 Hash</label>
+        <div class="cert-hash">{{ agreement.document_hash_sha256 or 'N/A' }}</div>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--grey-500)">PDF SHA-256 Hash</label>
+        <div class="cert-hash">{{ gen_pdf.pdf_hash_sha256 or 'N/A' }}</div>
+      </div>
+    </div>
+
+    <!-- FINAL VERDICT -->
+    <div style="text-align:center;padding:20px;background:{% if agreement.is_fully_signed %}#f0fdf4{% else %}#fffbeb{% endif %};border-radius:var(--radius);margin-bottom:20px">
+      <div style="font-size:32px;margin-bottom:6px">{% if agreement.is_fully_signed %}✅{% else %}⏳{% endif %}</div>
+      <div style="font-size:20px;font-weight:800;color:{% if agreement.is_fully_signed %}var(--success){% else %}var(--warning){% endif %}">
+        {% if agreement.is_fully_signed %}VERIFIED — BOTH PARTIES SIGNED{% else %}PENDING SIGNATURES{% endif %}
+      </div>
+    </div>
+
+    <!-- VERIFY LINK -->
+    <div style="text-align:center">
+      <div class="text-muted text-sm" style="margin-bottom:8px">Scan QR code or click to verify online:</div>
+      <a href="{{ url_for('verification.verify_by_code', code=agreement.verification_code) }}"
+         target="_blank" class="btn btn-outline" style="font-family:monospace;font-size:12px">
+        🔍 /verify/code/{{ agreement.verification_code[:24] }}...
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- DOWNLOAD BUTTONS FOR BOTH PARTIES -->
+<div class="card pop-in pop-in-delay-4" style="margin-top:20px">
+  <div class="card-body">
+    <div class="section-title">Download PDF Certificate</div>
+    <p class="text-muted" style="font-size:13px;margin-bottom:20px">
+      Both the landlord and tenant can download their own copy. The PDF includes both parties' photos, signatures, SHA-256 hash, QR verification code, and all agreement details.
+    </p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a href="{{ url_for('pdf.download_pdf', agreement_id=agreement.id) }}" class="btn btn-primary btn-lg">
+        ⬇ Download My PDF Copy
+      </a>
+      <form method="POST" action="{{ url_for('pdf.generate_pdf', agreement_id=agreement.id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-outline">🔄 Regenerate PDF</button>
+      </form>
+    </div>
+    <div class="warning-box" style="margin-top:16px;font-size:11px">
+      ACADEMIC PROTOTYPE — This PDF is not an official legal document. It is for educational demonstration only.
+    </div>
+  </div>
+</div>
+
+
+{% endif %}
+{% endblock %}

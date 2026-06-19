@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Flask / instance
+instance/
+*.db
+*.sqlite3
+
+# Secrets
+.env
+*.key
+*.pem
+
+# Generated files (uploaded documents, photos, PDFs)
+app/static/uploads/
+instance/agreements/
+instance/photos/
+instance/pdfs/
+instance/qrcodes/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+flask_out.txt
+flask_err.txt
+
+# Storage (user data — not for version control)
+storage/
+
+# Render / deploy artifacts
+*.render.log
+
+# Local dev / AI assistant scripts (not for repo)
+clean-msg.ps1
+.claude/
+
+# Test runner cache
+.pytest_cache/
+
+# Test suite (not needed in production)
+tests/
+
+# Local dev only
+docker-compose.yml
+checking.ym
+
+# Dev utility scripts
+db_inspect.py
+create_admin.py

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Add Asset{% endblock %}
+{% block page_title %}Add New Asset{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Add Rental Asset</h1>
+    <p>Register a property or item available for rent</p>
+  </div>
+  <a href="{{ url_for('asset.list_assets') }}" class="btn btn-outline">← Back to Assets</a>
+</div>
+
+<div class="card pop-in pop-in-delay-1" style="max-width:700px">
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('asset.create_asset') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <!-- CATEGORY SELECTION -->
+      <div class="form-group">
+        <label class="form-label">Rental Category *</label>
+        <input type="hidden" name="category_id" id="categoryInput" value="{{ form_data.get('category_id','') }}" required>
+        <div class="category-grid">
+          {% for cat in categories %}
+          <div class="category-card {% if form_data.get('category_id')|string == cat.id|string %}selected{% endif %}"
+               data-value="{{ cat.id }}" onclick="selectCategory(this,'categoryInput')" title="{{ cat.description }}">
+            <div class="cat-icon">
+              {% if cat.icon == 'home' %}🏠
+              {% elif cat.icon == 'door-open' %}🚪
+              {% elif cat.icon == 'building' %}🏢
+              {% elif cat.icon == 'map' %}🗺️
+              {% elif cat.icon == 'car' %}🚗
+              {% elif cat.icon == 'bicycle' %}🛵
+              {% elif cat.icon == 'gear' %}⚙️
+              {% elif cat.icon == 'briefcase' %}💼
+              {% elif cat.icon == 'box' %}📦
+              {% else %}🏷️{% endif %}
+            </div>
+            <div class="cat-name">{{ cat.name }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Asset Title *</label>
+        <input type="text" name="asset_title" class="form-control" required
+               placeholder="e.g. 3BHK House in Lalitpur" value="{{ form_data.get('asset_title','') }}">
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Asset Type</label>
+          <input type="text" name="asset_type" class="form-control"
+                 placeholder="e.g. Residential, Commercial" value="{{ form_data.get('asset_type','') }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Asset Identifier</label>
+          <input type="text" name="asset_identifier" class="form-control"
+                 placeholder="Plot no. / Plate no. / Serial no." value="{{ form_data.get('asset_identifier','') }}">
+          <div class="form-hint">Vehicle plate, land plot number, equipment serial, etc.</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Location / Address</label>
+        <input type="text" name="location" class="form-control"
+               placeholder="Full address or location" value="{{ form_data.get('location','') }}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea name="description" class="form-control" rows="3"
+                  placeholder="Describe the asset...">{{ form_data.get('description','') }}</textarea>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Asking Rent (NPR) *</label>
+          <input type="number" name="estimated_value" class="form-control"
+                 placeholder="e.g. 15000" min="0" step="500" value="{{ form_data.get('estimated_value','') }}" required>
+          <div class="form-hint">The price you charge tenants</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rent Period *</label>
+          <select name="rent_period" class="form-control" required>
+            <option value="per_month"  {% if form_data.get('rent_period','per_month')=='per_month'  %}selected{% endif %}>Per Month</option>
+            <option value="per_day"    {% if form_data.get('rent_period')=='per_day'    %}selected{% endif %}>Per Day</option>
+            <option value="per_year"   {% if form_data.get('rent_period')=='per_year'   %}selected{% endif %}>Per Year</option>
+            <option value="fixed"      {% if form_data.get('rent_period')=='fixed'      %}selected{% endif %}>Fixed / One-Time</option>
+          </select>
+          <div class="form-hint">How tenants will be charged</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Asset Photo <span class="text-muted">(optional — JPG, PNG or WebP, max 5 MB)</span></label>
+        <input type="file" name="photo" id="assetPhoto" class="form-control"
+               accept="image/jpeg,image/png,image/webp"
+               onchange="document.getElementById('assetPhotoPreview').src=URL.createObjectURL(this.files[0]);document.getElementById('assetPhotoPreview').style.display='block'">
+        <img id="assetPhotoPreview" src="" alt="Preview"
+             style="display:none;margin-top:10px;max-height:180px;border-radius:8px;object-fit:cover">
+      </div>
+
+      <div class="divider"></div>
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <a href="{{ url_for('asset.list_assets') }}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary">Register Asset</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}My Assets{% endblock %}
+{% block page_title %}My Assets{% endblock %}
+
+{% block content %}
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>My Rental Assets</h1>
+    <p>Manage your registered properties and items</p>
+  </div>
+  <a href="{{ url_for('asset.create_asset') }}" class="btn btn-primary">+ Add Asset</a>
+</div>
+
+{% if assets %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+  {% for a in assets %}
+  <div class="card pop-in pop-in-delay-{{ loop.index if loop.index <= 5 else 5 }}" style="transition-delay:{{ loop.index * 0.05 }}s">
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div>
+          <div style="font-size:22px;margin-bottom:4px">
+            {% if a.photo_path %}
+            <img src="{{ url_for('asset.asset_photo', asset_id=a.id) }}" alt="{{ a.asset_title }}"
+                 style="width:60px;height:60px;object-fit:cover;border-radius:8px">
+            {% elif a.category %}
+              {% if a.category.icon == 'home' %}🏠
+              {% elif a.category.icon == 'door-open' %}🚪
+              {% elif a.category.icon == 'building' %}🏢
+              {% elif a.category.icon == 'map' %}🗺️
+              {% elif a.category.icon == 'car' %}🚗
+              {% elif a.category.icon == 'bicycle' %}🛵
+              {% elif a.category.icon == 'gear' %}⚙️
+              {% elif a.category.icon == 'briefcase' %}💼
+              {% elif a.category.icon == 'box' %}📦
+              {% else %}🏷️{% endif %}
+            {% else %}🏷️{% endif %}
+          </div>
+          <div style="font-weight:700;font-size:15px">{{ a.asset_title }}</div>
+          <div class="text-muted">{{ a.category.name if a.category else 'Uncategorized' }}</div>
+        </div>
+        {% if a.status == 'available' %}<span class="badge badge-success">Available</span>
+        {% elif a.status == 'rented' %}<span class="badge badge-info">Rented</span>
+        {% else %}<span class="badge badge-grey">{{ a.status.title() }}</span>{% endif %}
+      </div>
+
+      {% if a.location %}
+      <div class="text-muted text-sm" style="margin-bottom:6px">📍 {{ a.location }}</div>
+      {% endif %}
+      {% if a.asset_identifier %}
+      <div class="text-muted text-sm" style="margin-bottom:6px">🔖 {{ a.asset_identifier }}</div>
+      {% endif %}
+      {% if a.estimated_value %}
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px">
+        NPR {{ '{:,.0f}'.format(a.estimated_value) }}
+        <span style="font-size:12px;font-weight:400;color:var(--grey-500)">{{ a.rent_period_label }}</span>
+      </div>
+      {% endif %}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <a href="{{ url_for('asset.view_asset', asset_id=a.id) }}" class="btn btn-sm btn-outline">View</a>
+        <a href="{{ url_for('asset.edit_asset', asset_id=a.id) }}" class="btn btn-sm btn-ghost">Edit</a>
+        <a href="{{ url_for('agreement.create_agreement') }}?asset_id={{ a.id }}" class="btn btn-sm btn-primary">Agreement</a>
+        <form method="POST" action="{{ url_for('asset.delete_asset', asset_id=a.id) }}" style="margin:0"
+              onsubmit="return confirm('Delete \'{{ a.asset_title|e }}\' permanently? This cannot be undone.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5">Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card pop-in">
+  <div class="card-body text-center" style="padding:60px 20px">
+    <div style="font-size:48px;margin-bottom:16px">🏠</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px">No assets yet</div>
+    <div class="text-muted" style="margin-bottom:24px">Add your first rental property or asset to get started.</div>
+    <a href="{{ url_for('asset.create_asset') }}" class="btn btn-primary btn-lg">+ Add Your First Asset</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

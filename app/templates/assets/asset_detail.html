@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.asset_title }}{% endblock %}
+{% block page_title %}Asset Detail{% endblock %}
+
+{% block content %}
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>{{ asset.asset_title }}</h1>
+    <p>{{ asset.category.name if asset.category else 'Uncategorized' }}
+       {% if asset.asset_type %}&mdash; {{ asset.asset_type }}{% endif %}
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if asset.owner_id == current_user.id %}
+    <a href="{{ url_for('asset.list_assets') }}" class="btn btn-outline">← My Assets</a>
+    <a href="{{ url_for('asset.edit_asset', asset_id=asset.id) }}" class="btn btn-ghost">Edit Listing</a>
+    <a href="{{ url_for('agreement.create_agreement') }}?asset_id={{ asset.id }}" class="btn btn-primary">Create Agreement</a>
+    {% elif current_user.has_role('tenant') and asset.status == 'available' %}
+    <a href="{{ url_for('asset.browse') }}" class="btn btn-outline">← Browse</a>
+    <a href="{{ url_for('req.create_request', asset_id=asset.id) }}" class="btn btn-primary">Request Agreement →</a>
+    {% else %}
+    <a href="{{ url_for('asset.browse') }}" class="btn btn-outline">← Browse</a>
+    <button class="btn btn-primary"
+            onclick="showInterest({{ asset.id }},'{{ asset.asset_title|e }}','{{ asset.owner.full_name|e }}','{{ asset.owner.email|e }}','{{ asset.owner.phone or ''|e }}')">
+      🤝 I'm Interested
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2 pop-in pop-in-delay-1" style="gap:20px">
+  <!-- LEFT: Details -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <!-- Asset info card -->
+    <div class="card">
+      <div class="card-body">
+        {% if asset.photo_path %}
+        <img src="{{ url_for('asset.asset_photo', asset_id=asset.id) }}" alt="{{ asset.asset_title }}"
+             style="width:100%;max-height:260px;object-fit:cover;border-radius:10px;margin-bottom:12px">
+        {% else %}
+        <div style="font-size:48px;margin-bottom:12px">
+          {% if asset.category %}
+            {% if asset.category.icon == 'home' %}🏠{% elif asset.category.icon == 'door-open' %}🚪{% elif asset.category.icon == 'building' %}🏢{% elif asset.category.icon == 'map' %}🗺️{% elif asset.category.icon == 'car' %}🚗{% elif asset.category.icon == 'bicycle' %}🛵{% elif asset.category.icon == 'gear' %}⚙️{% elif asset.category.icon == 'briefcase' %}💼{% elif asset.category.icon == 'box' %}📦{% else %}🏷️{% endif %}
+          {% else %}🏷️{% endif %}
+        </div>
+        {% endif %}
+        <div class="section-title">Asset Details</div>
+        <div style="display:grid;gap:14px">
+          {% for label, val in [
+            ('Category', asset.category.name if asset.category else None),
+            ('Asset Type', asset.asset_type),
+            ('Identifier', asset.asset_identifier),
+            ('Location', asset.location),
+            ('Status', asset.status.title()),
+            ('Asking Rent', ('NPR ' + '{:,.0f}'.format(asset.estimated_value) + ' ' + asset.rent_period_label) if asset.estimated_value else None),
+            ('Listed On', asset.created_at.strftime('%d %b %Y')),
+          ] %}
+          {% if val %}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--grey-100)">
+            <span class="text-muted text-sm">{{ label }}</span>
+            <span style="font-weight:600;text-align:right">{{ val }}</span>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    {% if asset.description %}
+    <div class="card">
+      <div class="card-body">
+        <div class="section-title">Description</div>
+        <p style="color:var(--grey-600);font-size:14px;line-height:1.8">{{ asset.description }}</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- RIGHT: Landlord + Status -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <!-- Landlord card -->
+    <div class="card">
+      <div class="card-body">
+        <div class="section-title">Listed By</div>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+          <div style="width:52px;height:52px;border-radius:50%;background:var(--black);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex-shrink:0">
+            {{ asset.owner.full_name[0].upper() }}
+          </div>
+          <div>
+            <div style="font-size:17px;font-weight:700">{{ asset.owner.full_name }}</div>
+            <div class="text-muted text-sm">Verified Landlord</div>
+          </div>
+        </div>
+        {% if asset.owner_id == current_user.id %}
+        <div class="info-box" style="font-size:12px">
+          This is your listing. You can create an agreement directly with a tenant.
+        </div>
+        <a href="{{ url_for('agreement.create_agreement') }}?asset_id={{ asset.id }}" class="btn btn-primary btn-full" style="margin-top:10px">
+          Create Agreement for This Asset
+        </a>
+        {% elif current_user.has_role('tenant') and asset.status == 'available' %}
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <a href="{{ url_for('req.create_request', asset_id=asset.id) }}" class="btn btn-primary btn-full">
+            📋 Request Agreement
+          </a>
+          <a href="mailto:{{ asset.owner.email }}" class="btn btn-outline btn-full">
+            ✉ {{ asset.owner.email }}
+          </a>
+          {% if asset.owner.phone %}
+          <a href="tel:{{ asset.owner.phone }}" class="btn btn-ghost btn-full">
+            📞 {{ asset.owner.phone }}
+          </a>
+          {% endif %}
+        </div>
+        <!-- Animated CTA banner -->
+        <div class="vr-cta-banner" style="margin-top:14px">
+          <span class="vr-cta-pulse"></span>
+          <span class="vr-cta-icon">🚀</span>
+          <span class="vr-cta-text">
+            Click <strong>Request Agreement</strong> to start the rental process through ValidRent —
+            negotiation, signing, and PDF all handled in-app.
+          </span>
+          <span class="vr-cta-arrow">→</span>
+        </div>
+
+        <style>
+        .vr-cta-banner {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 13px 16px;
+          background: linear-gradient(135deg, #dc2626 0%, #b91c1c 60%, #7f1d1d 100%);
+          border-radius: 10px;
+          color: #fff;
+          font-size: 12.5px;
+          line-height: 1.5;
+          overflow: hidden;
+          box-shadow: 0 4px 18px rgba(220,38,38,.35);
+          animation: vr-slidein .5s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        /* shimmer sweep */
+        .vr-cta-banner::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.15) 50%, transparent 70%);
+          background-size: 200% 100%;
+          animation: vr-shimmer 2.4s ease-in-out infinite;
+        }
+
+        /* pulsing red glow ring */
+        .vr-cta-pulse {
+          position: absolute;
+          inset: 0;
+          border-radius: 10px;
+          box-shadow: 0 0 0 0 rgba(220,38,38,.6);
+          animation: vr-pulse 2s ease-out infinite;
+          pointer-events: none;
+        }
+
+        .vr-cta-icon {
+          font-size: 20px;
+          flex-shrink: 0;
+          animation: vr-bounce 1.6s ease-in-out infinite;
+          position: relative;
+          z-index: 1;
+        }
+
+        .vr-cta-text {
+          flex: 1;
+          position: relative;
+          z-index: 1;
+          opacity: 0;
+          animation: vr-fadein .6s .3s ease forwards;
+        }
+
+        .vr-cta-arrow {
+          font-size: 18px;
+          font-weight: 900;
+          flex-shrink: 0;
+          position: relative;
+          z-index: 1;
+          animation: vr-nudge 1.2s ease-in-out infinite;
+        }
+
+        @keyframes vr-slidein {
+          from { opacity: 0; transform: translateY(-10px) scale(.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes vr-fadein {
+          to { opacity: 1; }
+        }
+        @keyframes vr-shimmer {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes vr-pulse {
+          0%   { box-shadow: 0 0 0 0   rgba(220,38,38,.55); }
+          70%  { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
+          100% { box-shadow: 0 0 0 0   rgba(220,38,38,0); }
+        }
+        @keyframes vr-bounce {
+          0%,100% { transform: translateY(0); }
+          50%     { transform: translateY(-4px); }
+        }
+        @keyframes vr-nudge {
+          0%,100% { transform: translateX(0); }
+          50%     { transform: translateX(4px); }
+        }
+        </style>
+        {% else %}
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-primary btn-full"
+                  onclick="showInterest({{ asset.id }},'{{ asset.asset_title|e }}','{{ asset.owner.full_name|e }}','{{ asset.owner.email|e }}','{{ asset.owner.phone or ''|e }}')">
+            🤝 I'm Interested — Contact Now
+          </button>
+          <a href="mailto:{{ asset.owner.email }}" class="btn btn-outline btn-full">
+            ✉ {{ asset.owner.email }}
+          </a>
+        </div>
+        {% if not current_user.has_role('tenant') %}
+        <div class="info-box" style="margin-top:14px;font-size:12px">
+          To request this listing through ValidRent, add the Tenant role from your <a href="{{ url_for('dashboard.home') }}" style="color:var(--black);font-weight:700">Dashboard</a>.
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Status badge -->
+    <div class="card">
+      <div class="card-body" style="text-align:center;padding:28px">
+        <div style="font-size:36px;margin-bottom:8px">
+          {% if asset.status == 'available' %}✅{% elif asset.status == 'rented' %}🔒{% else %}⏸️{% endif %}
+        </div>
+        <div style="font-size:18px;font-weight:800">
+          {% if asset.status == 'available' %}Available for Rent
+          {% elif asset.status == 'rented' %}Currently Rented
+          {% else %}Temporarily Unavailable{% endif %}
+        </div>
+        <div class="text-muted text-sm" style="margin-top:6px">
+          {% if asset.status == 'available' %}This asset is ready for a new agreement.
+          {% elif asset.status == 'rented' %}This asset is under an active agreement.
+          {% else %}Check back later.{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showInterest(assetId, title, landlordName, email, phone) {
+  openModal(`
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:36px;margin-bottom:8px">🤝</div>
+      <div class="modal-title">Contact Landlord</div>
+      <div class="modal-body">You are interested in <strong>${title}</strong>.<br>
+      Contact the landlord to arrange a viewing and rental agreement.</div>
+    </div>
+    <div style="background:var(--grey-100);border-radius:var(--radius-sm);padding:16px;margin:16px 0;display:grid;gap:10px">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Landlord</div>
+        <div style="font-weight:700">${landlordName}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Email</div>
+        <a href="mailto:${email}" style="color:var(--black);font-weight:600">${email}</a>
+      </div>
+      ${phone ? `<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Phone</div><a href="tel:${phone}" style="color:var(--black);font-weight:600">${phone}</a></div>` : ''}
+    </div>
+    <div class="info-box" style="font-size:12px">
+      The landlord will create an agreement with your account. It will appear in your <strong>Agreements</strong> section to sign.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      <a href="mailto:${email}?subject=Rental Inquiry — ${encodeURIComponent(title)}&body=Hello ${landlordName},%0A%0AI am interested in your property: ${title}.%0A%0APlease let me know the next steps.%0A%0AThank you." class="btn btn-primary">Send Email</a>
+    </div>
+  `);
+}
+</script>
+{% endblock %}

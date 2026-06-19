@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Request Rental{% endblock %}
+{% block page_title %}Create Rental Request{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Request Rental</h1>
+    <p>Send a formal rental request to the landlord — all inside the app</p>
+  </div>
+  <a href="{{ url_for('asset.view_asset', asset_id=asset.id) }}" class="btn btn-outline">← Back to Asset</a>
+</div>
+
+<!-- ASSET SUMMARY -->
+<div class="card pop-in pop-in-delay-1" style="margin-bottom:20px;border-left:4px solid var(--black)">
+  <div class="card-body" style="display:flex;align-items:center;gap:16px">
+    <div style="font-size:36px">
+      {% if asset.category %}
+        {% if asset.category.icon == 'home' %}🏠{% elif asset.category.icon == 'door-open' %}🚪{% elif asset.category.icon == 'building' %}🏢{% elif asset.category.icon == 'map' %}🗺️{% elif asset.category.icon == 'car' %}🚗{% elif asset.category.icon == 'bicycle' %}🛵{% elif asset.category.icon == 'gear' %}⚙️{% elif asset.category.icon == 'briefcase' %}💼{% elif asset.category.icon == 'box' %}📦{% else %}🏷️{% endif %}
+      {% else %}🏷️{% endif %}
+    </div>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:800">{{ asset.asset_title }}</div>
+      <div class="text-muted">{{ asset.category.name if asset.category else '' }} &bull; {{ asset.location or 'Location not specified' }}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;color:var(--grey-500)">Listed by</div>
+      <div style="font-weight:700">{{ asset.owner.full_name }}</div>
+      {% if asset.estimated_value %}
+      <div style="font-size:15px;font-weight:800;color:var(--black);margin-top:4px">
+        NPR {{ '{:,.0f}'.format(asset.estimated_value) }}
+        <span style="font-size:11px;font-weight:500;color:var(--grey-500)">{{ asset.rent_period_label }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- REQUEST FORM -->
+<div class="card pop-in pop-in-delay-2" style="max-width:700px">
+  <div class="card-body">
+    <div class="section-title" style="margin-bottom:18px">Fill in your rental request details</div>
+
+    <form method="POST" action="{{ url_for('req.create_request', asset_id=asset.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label class="form-label">Rental Category</label>
+        <select name="rental_category" class="form-control" required>
+          {% for cat in categories %}
+          <option value="{{ cat.name }}"
+                  {% if asset.category and asset.category.name == cat.name %}selected{% endif %}>
+            {{ cat.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Proposed Start Date</label>
+          <input type="date" name="start_date" id="req_start_date" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Proposed End Date</label>
+          <input type="date" name="end_date" id="req_end_date" class="form-control">
+          <div id="date-error" style="display:none;color:#ef4444;font-size:.8rem;margin-top:4px"></div>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">
+            Your Offered Rent
+            {% if asset.estimated_value %}
+            <span style="font-weight:400;color:var(--grey-500);font-size:12px">
+              — Landlord asks NPR {{ '{:,.0f}'.format(asset.estimated_value) }} {{ asset.rent_period_label }}
+            </span>
+            {% endif %}
+          </label>
+          <input type="number" name="proposed_rent" class="form-control"
+                 placeholder="Amount you offer to pay" min="0" step="100"
+                 {% if asset.estimated_value %}value="{{ asset.estimated_value|int }}"{% endif %}>
+          <div class="form-hint">
+            {% if asset.rent_period == 'per_month' %}Amount per month.
+            {% elif asset.rent_period == 'per_day' %}Amount per day.
+            {% elif asset.rent_period == 'per_year' %}Amount per year.
+            {% else %}Fixed / one-time amount.{% endif %}
+            Landlord may counter-offer during negotiation.
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currency</label>
+          <select name="currency" class="form-control">
+            <option value="NPR" selected>NPR – Nepalese Rupee</option>
+            <option value="USD">USD – US Dollar</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Message to Landlord</label>
+        <textarea name="tenant_message" class="form-control" rows="4"
+                  placeholder="Introduce yourself, explain your intended use, ask any questions..."></textarea>
+        <div class="form-hint">This will appear as your first message in the negotiation chat</div>
+      </div>
+
+      <div class="info-box" style="margin-bottom:20px">
+        <strong>What happens next?</strong><br>
+        1. Landlord is notified in-app and reviews your request<br>
+        2. You can negotiate via encrypted in-app chat<br>
+        3. Both parties approve terms → system generates bilingual agreement (EN + NP)<br>
+        4. Both capture identity photos, sign digitally → PDF auto-generated
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <a href="{{ url_for('asset.view_asset', asset_id=asset.id) }}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-lg">Send Rental Request →</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  initDateRangeValidation('req_start_date', 'req_end_date', 'date-error');
+});
+</script>
+{% endblock %}

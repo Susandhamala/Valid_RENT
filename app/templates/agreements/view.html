@@ -1,0 +1,700 @@
+{% extends "base.html" %}
+{% block title %}Agreement Detail{% endblock %}
+{% block page_title %}Agreement Details{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<div class="page-header pop-in">
+  <div class="page-header-left">
+    <h1>Rental Agreement</h1>
+    <p class="font-mono" style="font-size:12px">{{ agreement.agreement_uid }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ back_url }}" class="btn btn-outline">← Back</a>
+
+    {% if agreement.is_fully_signed %}
+      {# PDF actions — both photos required #}
+      {% set photos_ok = landlord_photo and tenant_photo %}
+      {% if agreement.final_pdf_status == 'generated' %}
+      <a href="{{ url_for('pdf.view_certificate', agreement_id=agreement.id) }}" class="btn btn-outline">📄 View Certificate</a>
+      <a href="{{ url_for('pdf.download_pdf', agreement_id=agreement.id) }}" class="btn btn-primary">⬇ Download PDF</a>
+      {% elif photos_ok %}
+      <form method="POST" action="{{ url_for('pdf.generate_pdf', agreement_id=agreement.id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-success">Generate Certificate PDF</button>
+      </form>
+      {% else %}
+      <span class="btn btn-ghost" style="opacity:.5;cursor:not-allowed;font-size:12px" title="Both identity photos required">
+        📷 Photos needed for PDF
+      </span>
+      {% endif %}
+
+      {# Mutual deletion — fully signed agreements #}
+      {% set i_requested = (current_user.id == agreement.landlord_id and agreement.landlord_delete_requested)
+                        or (current_user.id == agreement.tenant_id   and agreement.tenant_delete_requested) %}
+      {% if i_requested %}
+      <span class="btn btn-ghost" style="opacity:.6;cursor:default;font-size:13px">
+        ⏳ Awaiting other party's consent to delete
+      </span>
+      {% else %}
+      <form id="reqDelForm" method="POST"
+            action="{{ url_for('agreement.request_delete_agreement', agreement_id=agreement.id) }}"
+            style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      </form>
+      <button type="button" class="btn btn-ghost" style="color:#dc2626;border-color:#dc2626"
+              onclick="confirmAction('Request mutual deletion of this fully-signed agreement?\n\nBoth parties must agree before it is permanently deleted.','reqDelForm')">
+        🗑 Request Deletion
+      </button>
+      {% endif %}
+
+    {% else %}
+      {# Direct delete — not fully signed #}
+      <form id="delForm" method="POST"
+            action="{{ url_for('agreement.delete_agreement', agreement_id=agreement.id) }}"
+            style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      </form>
+      <button type="button" class="btn btn-ghost" style="color:#dc2626;border-color:#dc2626"
+              onclick="confirmAction('Permanently delete this agreement?\n\nThis cannot be undone.','delForm')">
+        🗑 Delete Agreement
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if agreement.is_fully_signed %}
+  {% set other_requested = (current_user.id == agreement.tenant_id   and agreement.landlord_delete_requested)
+                        or (current_user.id == agreement.landlord_id and agreement.tenant_delete_requested) %}
+  {% if other_requested %}
+  <div class="info-box pop-in" style="background:#fef3c7;border-left:4px solid #f59e0b;margin-bottom:16px">
+    <strong>⚠ Deletion Requested</strong><br>
+    The other party has requested to delete this agreement.
+    Click <strong>Request Deletion</strong> above if you also agree — the agreement will be permanently removed.
+  </div>
+  {% endif %}
+{% endif %}
+
+<!-- STATUS BAR -->
+<div class="steps pop-in pop-in-delay-1">
+  <div class="step {% if agreement.status in ('pending_tenant','landlord_signed','fully_signed','verified') %}done{% else %}active{% endif %}">
+    <div class="step-num">{% if agreement.status in ('pending_tenant','landlord_signed','fully_signed','verified') %}✓{% else %}1{% endif %}</div>
+    <span>Created</span>
+  </div>
+  <div class="step-line {% if agreement.status in ('landlord_signed','fully_signed','verified') %}done{% endif %}"></div>
+  <div class="step {% if agreement.status in ('landlord_signed','fully_signed','verified') %}done{% elif agreement.status == 'pending_tenant' %}active{% endif %}">
+    <div class="step-num">{% if agreement.status in ('landlord_signed','fully_signed','verified') %}✓{% else %}2{% endif %}</div>
+    <span>Landlord Signed</span>
+  </div>
+  <div class="step-line {% if agreement.status in ('fully_signed','verified') %}done{% endif %}"></div>
+  <div class="step {% if agreement.status in ('fully_signed','verified') %}done{% elif agreement.status == 'landlord_signed' %}active{% endif %}">
+    <div class="step-num">{% if agreement.status in ('fully_signed','verified') %}✓{% else %}3{% endif %}</div>
+    <span>Tenant Signed</span>
+  </div>
+  <div class="step-line {% if agreement.final_pdf_status == 'generated' %}done{% endif %}"></div>
+  <div class="step {% if agreement.final_pdf_status == 'generated' %}done{% elif agreement.is_fully_signed %}active{% endif %}">
+    <div class="step-num">{% if agreement.final_pdf_status == 'generated' %}✓{% else %}4{% endif %}</div>
+    <span>Certificate</span>
+  </div>
+</div>
+
+<div class="grid-2 pop-in pop-in-delay-2" style="gap:16px;margin-bottom:16px">
+  <!-- AGREEMENT INFO -->
+  <div class="card">
+    <div class="card-body">
+      <div class="section-title">Agreement Details</div>
+      <div style="display:grid;gap:10px">
+        {% for label, val in [
+          ('Category', agreement.rental_category),
+          ('Start Date', agreement.start_date|string if agreement.start_date else None),
+          ('End Date', agreement.end_date|string if agreement.end_date else None),
+          ('Monthly Rent', (agreement.currency + ' ' + '{:,.0f}'.format(agreement.rent_amount)) if agreement.rent_amount else None),
+          ('Created', agreement.created_at.strftime('%d %b %Y %H:%M')),
+        ] %}
+        {% if val %}
+        <div>
+          <div class="text-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">{{ label }}</div>
+          <div style="font-weight:600">{{ val }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTIES -->
+  <div class="card">
+    <div class="card-body">
+      <div class="section-title">Parties</div>
+      <div style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--black);color:var(--white);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0">
+            {{ agreement.landlord.full_name[0].upper() }}
+          </div>
+          <div>
+            <div style="font-weight:700">{{ agreement.landlord.full_name }}</div>
+            <div class="text-muted text-sm">Landlord &bull; {{ agreement.landlord.email }}</div>
+            {% if landlord_cert %}
+            <span class="badge badge-{% if landlord_cert.is_valid %}success{% else %}danger{% endif %}" style="font-size:10px">Cert: {{ landlord_cert.status_display }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if agreement.tenant %}
+        <div class="divider" style="margin:4px 0"></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--grey-200);color:var(--black);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0">
+            {{ agreement.tenant.full_name[0].upper() }}
+          </div>
+          <div>
+            <div style="font-weight:700">{{ agreement.tenant.full_name }}</div>
+            <div class="text-muted text-sm">Tenant &bull; {{ agreement.tenant.email }}</div>
+            {% if tenant_cert %}
+            <span class="badge badge-{% if tenant_cert.is_valid %}success{% else %}danger{% endif %}" style="font-size:10px">Cert: {{ tenant_cert.status_display }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- INTEGRITY + DOCUMENT -->
+<div class="card pop-in pop-in-delay-3 mb-4">
+  <div class="card-body">
+    <div class="section-title">Document Integrity</div>
+    <div>
+      <div class="text-muted text-sm" style="margin-bottom:4px">SHA-256 Hash</div>
+      <div class="cert-hash">{{ agreement.document_hash_sha256 or 'N/A' }}</div>
+    </div>
+    {% if agreement.shared_file_path %}
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--grey-200)">
+      <div class="text-muted text-sm" style="margin-bottom:6px">Uploaded Document</div>
+      <a href="{{ url_for('agreement.view_document', agreement_id=agreement.id) }}"
+         target="_blank" class="btn btn-outline btn-sm">
+        📄 View / Download Document — {{ agreement.original_filename }}
+      </a>
+      <div class="form-hint" style="margin-top:6px">
+        The document is shared with both landlord and tenant. The SHA-256 hash above verifies its integrity.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- SIGNATURES -->
+<div class="grid-2 pop-in pop-in-delay-3" style="gap:16px;margin-bottom:16px">
+  <!-- LANDLORD SIGNATURE -->
+  <div class="card">
+    <div class="card-body">
+      <div class="section-title">Landlord Signature</div>
+      {% if agreement.landlord_signature %}
+      <span class="badge badge-success">✓ Signed</span>
+      <div class="text-muted text-sm" style="margin-top:6px">
+        {{ agreement.landlord_signed_at.strftime('%d %b %Y %H:%M') if agreement.landlord_signed_at else '' }}
+      </div>
+      {% if agreement.landlord_remarks %}
+      <div style="margin-top:8px;padding:8px;background:var(--grey-100);border-radius:6px;font-size:12px">
+        <span class="text-muted" style="font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.05em">Landlord Remarks</span>
+        <div style="margin-top:4px">{{ agreement.landlord_remarks }}</div>
+      </div>
+      {% endif %}
+      <div style="margin-top:8px">
+        <div class="text-muted" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">RSA-2048 Signature</div>
+        <div class="cert-hash" style="font-size:9px;word-break:break-all;line-height:1.4">{{ agreement.landlord_signature }}</div>
+      </div>
+      {% elif current_user.id == agreement.landlord_id %}
+      <p class="text-muted" style="font-size:13px;margin-bottom:12px">You have not signed this agreement yet.</p>
+      {% if not my_photo %}
+      <div style="padding:12px 14px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;margin-bottom:12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">📷 Identity Photo Required</div>
+        <div style="font-size:13px;color:#92400e;margin-bottom:10px">You must capture your identity photo before you can sign this agreement.</div>
+        <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm">Capture My Photo →</a>
+      </div>
+      {% else %}
+      <form id="signFormL" method="POST" action="{{ url_for('agreement.sign_agreement', agreement_id=agreement.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--grey-600);display:block;margin-bottom:4px">
+            Your Remarks (optional)
+          </label>
+          <textarea name="remarks" class="form-control" rows="3"
+                    placeholder="Add any remarks or conditions before signing — these will appear in the legal document and PDF..."></textarea>
+        </div>
+        <button type="button" class="btn btn-primary"
+                onclick="confirmAction('Sign this agreement with your RSA-2048 private key?','signFormL')">
+          ✍ Sign as Landlord
+        </button>
+      </form>
+      {% endif %}
+      {% else %}
+      <span class="badge badge-warning">Pending</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- TENANT SIGNATURE -->
+  <div class="card">
+    <div class="card-body">
+      <div class="section-title">Tenant Signature</div>
+      {% if agreement.tenant_signature %}
+      <span class="badge badge-success">✓ Signed</span>
+      <div class="text-muted text-sm" style="margin-top:6px">
+        {{ agreement.tenant_signed_at.strftime('%d %b %Y %H:%M') if agreement.tenant_signed_at else '' }}
+      </div>
+      {% if agreement.tenant_remarks %}
+      <div style="margin-top:8px;padding:8px;background:var(--grey-100);border-radius:6px;font-size:12px">
+        <span class="text-muted" style="font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.05em">Tenant Remarks</span>
+        <div style="margin-top:4px">{{ agreement.tenant_remarks }}</div>
+      </div>
+      {% endif %}
+      <div style="margin-top:8px">
+        <div class="text-muted" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">RSA-2048 Signature</div>
+        <div class="cert-hash" style="font-size:9px;word-break:break-all;line-height:1.4">{{ agreement.tenant_signature }}</div>
+      </div>
+      {% elif current_user.id == agreement.tenant_id %}
+      {% if linked_req and linked_req.status == 'pending' %}
+        {# Landlord created directly — tenant must accept first #}
+        <div style="padding:12px;background:#fef3c7;border-radius:8px;border-left:4px solid #f59e0b;margin-bottom:12px">
+          <div style="font-weight:700;font-size:13px;margin-bottom:4px">⚠ Review Required</div>
+          <div style="font-size:13px;color:#92400e">
+            The landlord has sent this agreement for your review. You must accept or reject it before signing.
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <form method="POST" action="{{ url_for('req.accept_direct_agreement', req_id=linked_req.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-success">✓ Accept &amp; Proceed to Sign</button>
+          </form>
+          <form id="rejectDirect{{ agreement.id }}" method="POST"
+                action="{{ url_for('req.reject_direct_agreement', req_id=linked_req.id) }}"
+                style="display:none">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          </form>
+          <button type="button" class="btn btn-danger btn-sm"
+                  onclick="confirmAction('Reject and cancel this agreement?','rejectDirect{{ agreement.id }}')">
+            ✗ Reject
+          </button>
+        </div>
+      {% elif linked_req and linked_req.status == 'rejected' %}
+        <span class="badge badge-danger">You rejected this agreement</span>
+        <div class="text-muted text-sm" style="margin-top:6px">Agreement is cancelled.</div>
+      {% else %}
+        <p class="text-muted" style="font-size:13px;margin-bottom:8px">
+          {% if not agreement.landlord_signature %}
+          The landlord must sign first.
+          {% else %}
+          The landlord has signed. You can now verify and sign.
+          {% endif %}
+        </p>
+        {% if agreement.landlord_signature %}
+          {% if not my_photo %}
+          <div style="padding:12px 14px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;margin-bottom:12px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px">📷 Identity Photo Required</div>
+            <div style="font-size:13px;color:#92400e;margin-bottom:10px">You must capture your identity photo before you can sign this agreement.</div>
+            <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm">Capture My Photo →</a>
+          </div>
+          {% else %}
+          <form id="signFormT" method="POST" action="{{ url_for('agreement.sign_agreement', agreement_id=agreement.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom:12px">
+              <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--grey-600);display:block;margin-bottom:4px">
+                Your Remarks (optional)
+              </label>
+              <textarea name="remarks" class="form-control" rows="3"
+                        placeholder="Add any remarks before signing — these will appear in the legal document and PDF..."></textarea>
+            </div>
+            <button type="button" class="btn btn-primary"
+                    onclick="confirmAction('Verify landlord signature and sign this agreement?','signFormT')">
+              ✍ Verify &amp; Sign as Tenant
+            </button>
+          </form>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+      {% else %}
+      <span class="badge badge-warning">Pending</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ── IDENTITY VERIFICATION PANEL ──────────────────────────────────────── -->
+{% if agreement.status != 'draft' %}
+{% set doc_labels = {
+  'citizenship': 'Citizenship Certificate (नागरिकता)',
+  'passport': 'Passport (राहदानी)',
+  'driving_license': 'Driving License (सवारी चालक अनुमतिपत्र)',
+  'voter_id': 'Voter ID Card (मतदाता परिचयपत्र)',
+  'national_id': 'National ID Card (राष्ट्रिय परिचयपत्र)'
+} %}
+{% set tenant_doc_is_image = tenant_photo and tenant_photo.document_path and not tenant_photo.document_path.endswith('.pdf') %}
+
+<div class="card pop-in pop-in-delay-4" style="margin-top:16px">
+  <div class="card-header" style="background:var(--black);color:var(--white);padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-weight:700;font-size:15px">📷 Identity Verification</div>
+      <div style="font-size:11px;opacity:.6">Webcam photos &amp; government ID — required before signing</div>
+    </div>
+    <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}"
+       class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);font-size:12px">
+      {% if my_photo %}🔄 Recapture{% else %}📷 Capture My Photo{% endif %}
+    </a>
+  </div>
+
+  <div style="padding:0">
+
+    <!-- ── BOTH WEBCAM PHOTOS SIDE BY SIDE ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--grey-200)">
+
+      <!-- Landlord photo -->
+      <div style="padding:18px 20px;border-right:1px solid var(--grey-200)">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--grey-500);margin-bottom:12px">🏠 Landlord</div>
+        {% if landlord_photo and landlord_photo.photo_encrypted_path %}
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <img src="{{ url_for('photo.serve_photo', photo_id=landlord_photo.id) }}"
+               onclick="agViewPhoto(this.src,'{{ agreement.landlord.full_name | e }}')"
+               style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--black);cursor:zoom-in;flex-shrink:0"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+               title="Click to enlarge">
+          <div style="display:none;width:80px;height:80px;border-radius:50%;background:var(--grey-200);align-items:center;justify-content:center;font-size:28px;flex-shrink:0">📷</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">{{ agreement.landlord.full_name }}</div>
+            <span class="badge badge-success" style="font-size:10px;margin-top:4px">✓ Photo on file</span>
+            {% if landlord_photo.captured_at %}
+            <div class="text-muted text-sm" style="margin-top:4px">{{ landlord_photo.captured_at.strftime('%d %b %Y') }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:80px;height:80px;border-radius:50%;background:var(--grey-100);border:2px dashed var(--grey-300);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">📷</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">{{ agreement.landlord.full_name }}</div>
+            <span class="badge badge-danger" style="font-size:10px;margin-top:4px">✗ Not captured</span>
+            {% if current_user.id == agreement.landlord_id %}
+            <div style="margin-top:8px">
+              <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm" style="font-size:11px">📷 Capture Now</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Tenant photo -->
+      <div style="padding:18px 20px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--grey-500);margin-bottom:12px">🧑 Tenant</div>
+        {% if tenant_photo and tenant_photo.photo_encrypted_path %}
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <img src="{{ url_for('photo.serve_photo', photo_id=tenant_photo.id) }}"
+               onclick="agViewPhoto(this.src,'{{ agreement.tenant.full_name | e if agreement.tenant else 'Tenant' }}')"
+               style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--grey-400);cursor:zoom-in;flex-shrink:0"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+               title="Click to enlarge">
+          <div style="display:none;width:80px;height:80px;border-radius:50%;background:var(--grey-200);align-items:center;justify-content:center;font-size:28px;flex-shrink:0">📷</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">{{ agreement.tenant.full_name if agreement.tenant else '—' }}</div>
+            <span class="badge badge-success" style="font-size:10px;margin-top:4px">✓ Photo on file</span>
+            {% if tenant_photo.captured_at %}
+            <div class="text-muted text-sm" style="margin-top:4px">{{ tenant_photo.captured_at.strftime('%d %b %Y') }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:80px;height:80px;border-radius:50%;background:var(--grey-100);border:2px dashed var(--grey-300);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">📷</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">{{ agreement.tenant.full_name if agreement.tenant else '—' }}</div>
+            <span class="badge badge-danger" style="font-size:10px;margin-top:4px">✗ Not captured</span>
+            {% if current_user.id == agreement.tenant_id %}
+            <div style="margin-top:8px">
+              <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm" style="font-size:11px">📷 Capture Now</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── TENANT IDENTITY DOCUMENT ── -->
+    <div style="padding:18px 20px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--grey-500);margin-bottom:14px">🪪 Tenant Identity Document</div>
+
+      {% if tenant_photo and tenant_photo.document_path %}
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+
+        <!-- Document thumbnail or icon -->
+        <div style="flex-shrink:0">
+          {% if tenant_doc_is_image %}
+          <div style="position:relative;width:120px">
+            <img src="{{ url_for('photo.serve_document', agreement_id=agreement.id) }}"
+                 id="agDocThumb"
+                 onclick="agViewPhoto(this.src,'{{ doc_labels.get(tenant_photo.document_type, 'Identity Document') | e }}')"
+                 style="width:120px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--grey-200);cursor:zoom-in;display:block"
+                 onerror="this.style.display='none';document.getElementById('agDocIcon').style.display='flex'"
+                 title="Click to enlarge">
+            <div id="agDocIcon" style="display:none;width:120px;height:90px;border-radius:8px;border:2px dashed var(--grey-300);background:var(--grey-100);align-items:center;justify-content:center;font-size:36px">🪪</div>
+            <div style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;padding:2px 5px;border-radius:4px">click to zoom</div>
+          </div>
+          {% else %}
+          <div style="width:120px;height:90px;border-radius:8px;border:2px solid var(--grey-200);background:var(--grey-50,#f9fafb);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+            <span style="font-size:32px">📄</span>
+            <span style="font-size:10px;color:var(--grey-500);font-weight:600">PDF Document</span>
+          </div>
+          {% endif %}
+          <div style="margin-top:6px;display:flex;gap:4px">
+            {% if tenant_doc_is_image %}
+            <button onclick="agViewPhoto('{{ url_for('photo.serve_document', agreement_id=agreement.id) }}','{{ doc_labels.get(tenant_photo.document_type,'Identity Document') | e }}')"
+                    class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px">🔍 Zoom</button>
+            {% endif %}
+            <a href="{{ url_for('photo.serve_document', agreement_id=agreement.id) }}"
+               target="_blank" class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px">
+               {% if tenant_doc_is_image %}↗ Open{% else %}📄 Open PDF{% endif %}
+            </a>
+          </div>
+        </div>
+
+        <!-- Document info -->
+        <div style="flex:1;min-width:160px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:4px">
+            {{ doc_labels.get(tenant_photo.document_type, tenant_photo.document_type or 'Identity Document') }}
+          </div>
+          <div class="text-muted text-sm" style="margin-bottom:10px">Submitted by {{ agreement.tenant.full_name if agreement.tenant else 'Tenant' }}</div>
+
+          {% if tenant_photo.document_approved %}
+          <div style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px">
+            <span style="font-size:16px">✅</span>
+            <div>
+              <div style="color:var(--success);font-weight:700;font-size:13px">Approved</div>
+              {% if tenant_photo.document_approved_at %}
+              <div class="text-muted text-sm">{{ tenant_photo.document_approved_at.strftime('%d %b %Y') }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% else %}
+          <div style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:8px;margin-bottom:10px">
+            <span style="font-size:16px">⏳</span>
+            <div>
+              <div style="color:#92400e;font-weight:700;font-size:13px">Pending Review</div>
+              <div class="text-muted text-sm">Awaiting landlord approval</div>
+            </div>
+          </div>
+          {% if current_user.id == agreement.landlord_id %}
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <form id="approveDocForm" method="POST"
+                  action="{{ url_for('photo.approve_document', agreement_id=agreement.id) }}"
+                  style="display:none">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            </form>
+            <button type="button" class="btn btn-success btn-sm"
+                    onclick="confirmAction('Approve this identity document?\n\nThis confirms you have visually verified it is genuine.','approveDocForm')">
+              ✓ Approve Document
+            </button>
+            <a href="{{ url_for('photo.serve_document', agreement_id=agreement.id) }}" target="_blank"
+               class="btn btn-outline btn-sm">View Full Size</a>
+          </div>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      {% elif current_user.id == agreement.tenant_id %}
+      <div style="padding:12px 14px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;display:flex;align-items:center;gap:14px">
+        <span style="font-size:28px;flex-shrink:0">⚠️</span>
+        <div>
+          <div style="font-weight:700;color:#dc2626;font-size:13px;margin-bottom:4px">No Document Uploaded</div>
+          <div style="font-size:13px;color:#991b1b;margin-bottom:8px">Upload your government-issued ID. Required for the PDF certificate.</div>
+          <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm">Upload Document →</a>
+        </div>
+      </div>
+      {% else %}
+      <div class="text-muted text-sm" style="font-style:italic">The tenant has not yet uploaded their identity document.</div>
+      {% endif %}
+    </div>
+
+    <!-- Action prompt for own photo -->
+    {% if not my_photo %}
+    <div style="padding:12px 20px;background:#fef2f2;border-top:1px solid #fca5a5;display:flex;align-items:center;gap:12px">
+      <span style="font-size:20px">⚠️</span>
+      <span style="font-size:13px;color:#991b1b;font-weight:600">You must capture your identity photo before signing.</span>
+      <a href="{{ url_for('photo.capture_photo', agreement_id=agreement.id) }}" class="btn btn-primary btn-sm" style="margin-left:auto;flex-shrink:0">📷 Capture Now</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Photo zoom modal (reuse agViewPhoto from floating chat JS) -->
+
+<!-- ── FLOATING CHAT WIDGET ────────────────────────────────────────────────── -->
+{% if thread %}
+<div id="chatWidget" style="position:fixed;bottom:24px;right:24px;z-index:1000;font-family:var(--font)">
+
+  <!-- Collapsed bubble -->
+  <button id="chatToggle" onclick="toggleChat()"
+          style="width:56px;height:56px;border-radius:50%;background:var(--black);color:var(--white);border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;font-size:22px;position:relative"
+          title="Chat with the other party">
+    💬
+    {% set ns = namespace(real_count=0) %}
+    {% for _m in chat_messages %}{% if not _m.is_system %}{% set ns.real_count = ns.real_count + 1 %}{% endif %}{% endfor %}
+    {% if ns.real_count > 0 %}
+    <span id="chatBadge" style="position:absolute;top:2px;right:2px;background:var(--danger);color:var(--white);border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ ns.real_count }}</span>
+    {% else %}
+    <span id="chatBadge" style="position:absolute;top:2px;right:2px;background:var(--danger);color:var(--white);border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center">●</span>
+    {% endif %}
+  </button>
+
+  <!-- Expanded panel -->
+  <div id="chatPanel" style="display:none;position:absolute;bottom:64px;right:0;width:340px;background:var(--white);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);overflow:hidden;border:1.5px solid var(--grey-200)">
+
+    <!-- Header -->
+    <div style="background:var(--black);color:var(--white);padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:14px">
+          🔒
+          {% if current_user.id == agreement.landlord_id %}
+            Chat with {{ agreement.tenant.full_name if agreement.tenant else 'Tenant' }}
+          {% else %}
+            Chat with {{ agreement.landlord.full_name }}
+          {% endif %}
+        </div>
+        <div style="font-size:10px;opacity:.6">AES-256-GCM encrypted &bull; Agreement chat</div>
+      </div>
+      <button onclick="toggleChat()" style="background:none;border:none;color:var(--white);cursor:pointer;font-size:18px;opacity:.7;padding:0;line-height:1">✕</button>
+    </div>
+
+    <!-- Messages -->
+    <div id="agChatMessages" style="height:280px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#fafafa">
+      {% set ns2 = namespace(has_user_msgs=False) %}
+      {% for msg in chat_messages %}
+      {% if not msg.is_system %}
+      {% set ns2.has_user_msgs = True %}
+      <div style="display:flex;flex-direction:column;align-items:{% if msg.sender_id == current_user.id %}flex-end{% else %}flex-start{% endif %}">
+        <div style="max-width:82%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.45;
+                    {% if msg.sender_id == current_user.id %}background:var(--black);color:var(--white);border-bottom-right-radius:3px{% else %}background:var(--grey-100);color:var(--black);border-bottom-left-radius:3px{% endif %}">
+          {{ msg.text }}
+        </div>
+        <div style="font-size:10px;color:var(--grey-400);margin-top:2px">{{ msg.sender_name }} &bull; {{ msg.sent_at.strftime('%d %b %H:%M') }}</div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% if not ns2.has_user_msgs %}
+      <div data-empty="" style="text-align:center;color:var(--grey-400);font-size:12px;padding:24px 0">No messages yet — start the conversation!</div>
+      {% endif %}
+    </div>
+
+    <!-- Input -->
+    <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--grey-200);background:var(--white)">
+      <textarea id="agChatText" placeholder="Type a message… (Enter to send)" rows="1"
+                style="flex:1;border:1.5px solid var(--grey-200);border-radius:8px;padding:8px 10px;font-size:13px;font-family:var(--font);resize:none;height:38px;outline:none;transition:border-color .2s"
+                onfocus="this.style.borderColor='var(--black)'" onblur="this.style.borderColor='var(--grey-200)'"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();agSendMsg();}"></textarea>
+      <button onclick="agSendMsg()" style="background:var(--black);color:var(--white);border:none;border-radius:8px;padding:0 14px;cursor:pointer;font-size:13px;font-weight:600;flex-shrink:0">Send</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const AG_THREAD_ID = {{ thread.id }};
+const AG_CSRF = document.querySelector('meta[name="csrf-token"]').content;
+let agLastMsgId = {{ (chat_messages[-1].id if chat_messages else 0) }};
+let chatOpen = false;
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const panel = document.getElementById('chatPanel');
+  panel.style.display = chatOpen ? 'block' : 'none';
+  if (chatOpen) {
+    const box = document.getElementById('agChatMessages');
+    box.scrollTop = box.scrollHeight;
+    const badge = document.getElementById('chatBadge');
+    if (badge) badge.style.display = 'none';
+    document.getElementById('agChatText').focus();
+  }
+}
+
+function agEsc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function agAppend(m) {
+  if (m.is_system) return;
+  const box = document.getElementById('agChatMessages');
+  const emptyNote = box.querySelector('[data-empty]');
+  if (emptyNote) emptyNote.remove();
+  const align = m.is_mine ? 'flex-end' : 'flex-start';
+  const bubbleStyle = m.is_mine
+    ? 'background:#000;color:#fff;border-bottom-right-radius:3px'
+    : 'background:#f3f4f6;color:#000;border-bottom-left-radius:3px';
+  box.insertAdjacentHTML('beforeend', `
+    <div style="display:flex;flex-direction:column;align-items:${align}">
+      <div style="max-width:82%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.45;${bubbleStyle}">${agEsc(m.text)}</div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:2px">${agEsc(m.sender_name)} &bull; ${m.sent_at}</div>
+    </div>`);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function agSendMsg() {
+  const ta = document.getElementById('agChatText');
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = '';
+  try {
+    const r = await fetch(`/chat/thread/${AG_THREAD_ID}/send`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken':AG_CSRF},
+      body: JSON.stringify({text}),
+    });
+    const d = await r.json();
+    if (d.success) { agAppend(d.message); agLastMsgId = d.message.id; }
+  } catch(e) {}
+}
+
+async function agPollMessages() {
+  try {
+    const r = await fetch(`/chat/thread/${AG_THREAD_ID}/messages?since=${agLastMsgId}`);
+    const d = await r.json();
+    if (d.messages && d.messages.length) {
+      d.messages.forEach(m => { agAppend(m); agLastMsgId = Math.max(agLastMsgId, m.id); });
+      if (!chatOpen) {
+        const badge = document.getElementById('chatBadge');
+        if (badge) { badge.style.display = 'flex'; }
+      }
+    }
+  } catch(e) {}
+}
+
+setInterval(agPollMessages, 4000);
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('agChatMessages').scrollTop = 9999;
+});
+</script>
+{% endif %}
+
+<!-- ── PHOTO ZOOM MODAL ────────────────────────────────────────────────────── -->
+<div id="agPhotoModal" onclick="agClosePhoto()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9000;align-items:center;justify-content:center;flex-direction:column;gap:12px;cursor:zoom-out">
+  <img id="agPhotoModalImg" src="" alt=""
+       style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.6);object-fit:contain">
+  <div id="agPhotoModalLabel" style="color:#fff;font-size:13px;font-weight:600;opacity:.85"></div>
+  <div style="color:rgba(255,255,255,.5);font-size:11px">Click anywhere to close</div>
+</div>
+<script>
+function agViewPhoto(src, label) {
+  const m = document.getElementById('agPhotoModal');
+  document.getElementById('agPhotoModalImg').src = src;
+  document.getElementById('agPhotoModalLabel').textContent = label || '';
+  m.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function agClosePhoto() {
+  document.getElementById('agPhotoModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') agClosePhoto(); });
+</script>
+{% endblock %}

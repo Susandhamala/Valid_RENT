@@ -1,0 +1,35 @@
+# Secrets & local config
+.env
+.env.*
+
+# User data (mounted as volumes in production)
+storage/
+instance/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Dev tools & test suite
+tests/
+docker-compose.yml
+db_inspect.py
+create_admin.py
+clean-msg.ps1
+checking.ym
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Git & CI
+.git/
+.gitignore
+
+# Claude
+.claude/

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.browse_title }}{% endblock %}
+{% block page_title %}{{ tr.browse_title }}{% endblock %}
+
+{% block head %}
+<style>
+.browse-hero {
+  background: var(--black); color: var(--white); border-radius: var(--radius);
+  padding: 36px 32px; margin-bottom: 28px; position: relative; overflow: hidden;
+}
+.browse-hero::before {
+  content: ''; position: absolute; top: -60px; right: -60px;
+  width: 240px; height: 240px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.06); pointer-events: none;
+}
+.browse-hero::after {
+  content: ''; position: absolute; bottom: -40px; left: 120px;
+  width: 160px; height: 160px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.04); pointer-events: none;
+}
+.search-bar {
+  display: flex; gap: 10px; position: relative; z-index: 1;
+  margin-top: 20px; flex-wrap: wrap;
+}
+.search-input-wrap { flex: 1; min-width: 220px; position: relative; }
+.search-input-wrap svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); stroke: var(--grey-400); }
+.search-bar input { padding-left: 40px; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.15); color: var(--white); }
+.search-bar input::placeholder { color: rgba(255,255,255,.4); }
+.search-bar input:focus { border-color: rgba(255,255,255,.4); box-shadow: none; background: rgba(255,255,255,.15); }
+.search-bar select { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.15); color: var(--white); }
+.search-bar select option { background: var(--black); color: var(--white); }
+
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+
+.asset-card {
+  background: var(--white); border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
+  display: flex; flex-direction: column;
+}
+.asset-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.asset-card-top {
+  background: var(--grey-100); padding: 28px 24px;
+  display: flex; align-items: center; gap: 14px;
+}
+.asset-emoji { font-size: 36px; }
+.asset-card-body { padding: 20px 24px; flex: 1; display: flex; flex-direction: column; }
+.asset-card-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.asset-card-cat { font-size: 12px; color: var(--grey-500); margin-bottom: 12px; }
+.asset-card-meta { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; flex: 1; }
+.asset-meta-row { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--grey-600); }
+.asset-card-price { font-size: 18px; font-weight: 800; margin-bottom: 14px; }
+.asset-card-footer { display: flex; gap: 8px; }
+
+.cat-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.cat-pill {
+  padding: 6px 14px; border-radius: 100px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--grey-200); cursor: pointer; background: var(--white);
+  transition: all .15s; text-decoration: none; color: var(--black);
+  display: flex; align-items: center; gap: 5px;
+}
+.cat-pill:hover { border-color: var(--black); }
+.cat-pill.active { background: var(--black); color: var(--white); border-color: var(--black); }
+
+.empty-state { text-align: center; padding: 72px 20px; }
+.landlord-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--grey-100); border-radius: 100px; padding: 4px 10px 4px 4px;
+  font-size: 12px; font-weight: 600;
+}
+.landlord-chip-av {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--black);
+  color: var(--white); display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- HERO SEARCH -->
+<div class="browse-hero pop-in">
+  <div style="position:relative;z-index:1">
+    <div style="font-size:13px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">
+      Valid Rent — Tenant Portal
+    </div>
+    <h1 style="font-size:28px;font-weight:800;margin-bottom:4px">{{ tr.browse_hero_title }}</h1>
+    <p style="color:rgba(255,255,255,.6);font-size:14px">
+      {{ tr.browse_hero_sub }}
+      {% if search %} — "<strong>{{ search }}</strong>"{% endif %}
+    </p>
+    <form method="GET" action="{{ url_for('asset.browse') }}" class="search-bar">
+      <div class="search-input-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" name="q" class="form-control" placeholder="{{ tr.search_placeholder }}"
+               value="{{ search }}">
+      </div>
+      <select name="category_id" class="form-control" style="min-width:160px;flex-shrink:0">
+        <option value="">{{ tr.all_categories }}</option>
+        {% for cat in categories %}
+        <option value="{{ cat.id }}" {% if selected_cat == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary" style="flex-shrink:0">Search</button>
+      {% if search or selected_cat %}
+      <a href="{{ url_for('asset.browse') }}" class="btn btn-ghost" style="flex-shrink:0;color:rgba(255,255,255,.7)">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- CATEGORY PILL FILTERS -->
+<div class="cat-filter-bar pop-in pop-in-delay-1">
+  <a href="{{ url_for('asset.browse', q=search) }}" class="cat-pill {% if not selected_cat %}active{% endif %}">All</a>
+  {% for cat in categories %}
+  <a href="{{ url_for('asset.browse', category_id=cat.id, q=search) }}"
+     class="cat-pill {% if selected_cat == cat.id %}active{% endif %}">
+    {% if cat.icon == 'home' %}🏠{% elif cat.icon == 'door-open' %}🚪{% elif cat.icon == 'building' %}🏢{% elif cat.icon == 'map' %}🗺️{% elif cat.icon == 'car' %}🚗{% elif cat.icon == 'bicycle' %}🛵{% elif cat.icon == 'gear' %}⚙️{% elif cat.icon == 'briefcase' %}💼{% elif cat.icon == 'box' %}📦{% else %}🏷️{% endif %}
+    {{ cat.name }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- RESULTS -->
+{% if assets %}
+<div class="asset-grid">
+  {% for asset in assets %}
+  <div class="asset-card pop-in" style="animation-delay:{{ loop.index0 * 0.05 }}s">
+    <div class="asset-card-top">
+      <div class="asset-emoji">
+        {% if asset.photo_path %}
+        <img src="{{ url_for('asset.asset_photo', asset_id=asset.id) }}" alt="{{ asset.asset_title }}"
+             style="width:60px;height:60px;object-fit:cover;border-radius:8px">
+        {% elif asset.category %}
+          {% if asset.category.icon == 'home' %}🏠{% elif asset.category.icon == 'door-open' %}🚪{% elif asset.category.icon == 'building' %}🏢{% elif asset.category.icon == 'map' %}🗺️{% elif asset.category.icon == 'car' %}🚗{% elif asset.category.icon == 'bicycle' %}🛵{% elif asset.category.icon == 'gear' %}⚙️{% elif asset.category.icon == 'briefcase' %}💼{% elif asset.category.icon == 'box' %}📦{% else %}🏷️{% endif %}
+        {% else %}🏷️{% endif %}
+      </div>
+      <div>
+        {% if asset.status == 'rented' %}
+        <span class="badge badge-danger" style="font-size:10px">Rented</span>
+        {% else %}
+        <span class="badge badge-success" style="font-size:10px">{{ tr.status_available }}</span>
+        {% endif %}
+        <div class="text-muted text-sm" style="margin-top:4px">
+          {{ asset.category.name if asset.category else 'General' }}
+        </div>
+      </div>
+      <div style="margin-left:auto">
+        <div class="landlord-chip" title="Listed by {{ asset.owner.full_name }}">
+          <div class="landlord-chip-av">{{ asset.owner.full_name[0].upper() }}</div>
+          {{ asset.owner.full_name.split()[0] }}
+        </div>
+      </div>
+    </div>
+
+    <div class="asset-card-body">
+      <div class="asset-card-title">{{ asset.asset_title }}</div>
+      <div class="asset-card-cat">{{ asset.asset_type or asset.category.name if asset.category else '' }}</div>
+
+      <div class="asset-card-meta">
+        {% if asset.location %}
+        <div class="asset-meta-row">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          {{ asset.location }}
+        </div>
+        {% endif %}
+        {% if asset.asset_identifier %}
+        <div class="asset-meta-row">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
+          ID: {{ asset.asset_identifier }}
+        </div>
+        {% endif %}
+        {% if asset.description %}
+        <div class="asset-meta-row" style="color:var(--grey-500);font-size:12px;line-height:1.4;margin-top:2px">
+          {{ asset.description[:80] }}{% if asset.description|length > 80 %}…{% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% if asset.estimated_value %}
+      <div class="asset-card-price">
+        NPR {{ '{:,.0f}'.format(asset.estimated_value) }}
+        <span style="font-size:12px;font-weight:400;color:var(--grey-500)">{{ asset.rent_period_label }}</span>
+      </div>
+      {% endif %}
+
+      <div class="asset-card-footer">
+        <a href="{{ url_for('asset.view_asset', asset_id=asset.id) }}" class="btn btn-outline btn-sm" style="flex:1">
+          {{ tr.btn_view }}
+        </a>
+        {% if asset.owner_id == current_user.id %}
+        <span class="btn btn-ghost btn-sm" style="flex:1;cursor:default;opacity:.6">Your Listing</span>
+        {% elif asset.status == 'rented' %}
+        <span class="btn btn-ghost btn-sm" style="flex:1;cursor:default;opacity:.5">Currently Rented</span>
+        {% elif current_user.has_role('tenant') %}
+        <a href="{{ url_for('req.create_request', asset_id=asset.id) }}" class="btn btn-primary btn-sm" style="flex:1">
+          {{ tr.btn_request }}
+        </a>
+        {% else %}
+        <button class="btn btn-ghost btn-sm" style="flex:1"
+                onclick="showInterest({{ asset.id }}, '{{ asset.asset_title|e }}', '{{ asset.owner.full_name|e }}', '{{ asset.owner.email|e }}', '{{ asset.owner.phone or ''|e }}')">
+          {{ tr.btn_contact }}
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="empty-state pop-in">
+  <div style="font-size:56px;margin-bottom:16px">🔍</div>
+  <div style="font-size:22px;font-weight:700;margin-bottom:8px">{{ tr.no_listings }}</div>
+  <div class="text-muted" style="margin-bottom:24px">
+    {% if search or selected_cat %}
+    {{ tr.no_listings_sub }}
+    <br><a href="{{ url_for('asset.browse') }}" style="color:var(--black);font-weight:600">Clear filters</a>
+    {% else %}
+    {{ tr.no_listings_sub }}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- INTEREST MODAL (injected dynamically) -->
+<script>
+function showInterest(assetId, title, landlordName, email, phone) {
+  openModal(`
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:36px;margin-bottom:8px">🤝</div>
+      <div class="modal-title">Contact Landlord</div>
+      <div class="modal-body">You are interested in <strong>${title}</strong>.<br>
+      Contact the landlord to arrange a viewing and agreement.</div>
+    </div>
+    <div style="background:var(--grey-100);border-radius:var(--radius-sm);padding:16px;margin:16px 0;display:grid;gap:10px">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Landlord</div>
+        <div style="font-weight:700">${landlordName}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Email</div>
+        <div><a href="mailto:${email}" style="color:var(--black);font-weight:600">${email}</a></div>
+      </div>
+      ${phone ? '<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--grey-500)">Phone</div><div><a href="tel:' + phone + '" style="color:var(--black);font-weight:600">' + phone + '</a></div></div>' : ''}
+    </div>
+    <div class="info-box" style="font-size:12px">
+      Once the landlord creates an agreement with your account, it will appear in your <strong>Agreements</strong> section for you to sign.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      <a href="mailto:${email}?subject=Rental Interest — ${encodeURIComponent(title)}&body=Hello ${landlordName},%0A%0AI am interested in renting your property: ${title}.%0A%0APlease let me know the next steps.%0A%0AThank you." class="btn btn-primary">Send Email</a>
+    </div>
+  `);
+}
+</script>
+{% endblock %}
