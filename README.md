@@ -141,7 +141,7 @@ gunicorn --bind 0.0.0.0:$PORT --workers 2 run:app
 ```
 
 ## Environment Variables
-
+defult password yse your own 
 | Variable | Description |
 | --- | --- |
 | SECRET_KEY | Secret key for Flask session security |
@@ -163,8 +163,8 @@ Contributions are welcome. If you want to improve the platform, add new features
 
 ## License
 
-This project is currently unlicensed. If you plan to distribute or publish it publicly, add an appropriate open-source license.
+This project is currently licensed. If you plan to distribute or publish it publicly, make sure you have a permission and appropriate open-source license.
 
 ## Contact
 
-For questions or collaboration, please reach out to the project maintainer.
+For questions or collaboration, please reach out to Susan Dhamala.
