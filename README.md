@@ -74,8 +74,9 @@ A demo video for the project can be added here:
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Susandhamala/Valid_RENT.git
 cd Validrent
+python3 ./run.py/ 
 ```
 
 ### 2. Create a Python virtual environment
