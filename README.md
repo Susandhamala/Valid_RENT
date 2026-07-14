@@ -37,6 +37,10 @@ ValidRent provides a complete workflow for managing rental activities in a singl
 - Deployment: Gunicorn, Docker, Render
 
 ## Architecture Diagram
+<img width="1448" height="1086" alt="1f4bd803-4058-4aae-8c64-3e69ba8db022" src="https://github.com/user-attachments/assets/55ed1c13-dc09-423b-a816-1793a6d848dc" />
+
+
+<img width="1672" height="941" alt="valid rent encryption and depriciption" src="https://github.com/user-attachments/assets/0648e4d0-8696-42d2-8762-aad69ea50e04" />
 
 ```mermaid
 flowchart LR
