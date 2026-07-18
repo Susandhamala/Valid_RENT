@@ -65,8 +65,6 @@ flowchart LR
 
 ## Demo Video
 
-A demo video for the project can be added here:
-
 - Demo Video: https://www.youtube.com/watch?v=_y_K4GOjG64 
 
 ## How to Use
